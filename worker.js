@@ -20,17 +20,26 @@ export default {
         return Response.redirect(url.origin + "/admin", 302);
       }
 
-      if ((url.pathname === "/admin" || url.pathname === "/admin/") && request.method === "GET") {
+      if (
+        (url.pathname === "/admin" || url.pathname === "/admin/") &&
+        request.method === "GET"
+      ) {
         return htmlResponse(ADMIN_HTML);
       }
 
-      if ((url.pathname === "/tg-app" || url.pathname === "/tg-app/") && request.method === "GET") {
+      if (
+        (url.pathname === "/tg-app" || url.pathname === "/tg-app/") &&
+        request.method === "GET"
+      ) {
         return htmlResponse(ADMIN_HTML);
       }
 
       if (url.pathname === "/api/admin/login" && request.method === "POST") {
         if (!(await isAdminAuthorized(request, env))) {
-          return jsonResponse({ ok: false, error: "رمز عبور نادرست است." }, 401);
+          return jsonResponse(
+            { ok: false, error: "رمز عبور نادرست است." },
+            401,
+          );
         }
         return jsonResponse({ ok: true });
       }
@@ -39,65 +48,114 @@ export default {
         await requireAdmin(request, env);
         const users = await getUsers(env);
         const telegramSettings = await getTelegramSettings(env);
-        const adminPasswordHash = await env.CONFIGS_KV.get(ADMIN_PASSWORD_HASH_KEY);
+        const adminPasswordHash = await env.CONFIGS_KV.get(
+          ADMIN_PASSWORD_HASH_KEY,
+        );
         return jsonResponse({
           ok: true,
-          users: users.map(user => publicUser(user, url, env)),
+          users: users.map((user) => publicUser(user, url, env)),
           adminPasswordChanged: Boolean(adminPasswordHash),
-          telegram: publicTelegramSettings(telegramSettings, url, env)
+          telegram: publicTelegramSettings(telegramSettings, url, env),
         });
       }
 
-      if (url.pathname === "/api/telegram-miniapp/auth-status" && request.method === "GET") {
+      if (
+        url.pathname === "/api/telegram-miniapp/auth-status" &&
+        request.method === "GET"
+      ) {
         assertKvBinding(env);
 
         const initData = request.headers.get("x-telegram-init-data") || "";
         const settings = await getTelegramSettings(env);
 
         if (!initData) {
-          return jsonResponse({ ok: false, error: "Telegram initData was not received. Set BotFather Mini App URL to /tg-app and open it from Telegram." }, 401);
+          return jsonResponse(
+            {
+              ok: false,
+              error:
+                "Telegram initData was not received. Set BotFather Mini App URL to /tg-app and open it from Telegram.",
+            },
+            401,
+          );
         }
 
         if (!settings || !settings.botToken) {
-          return jsonResponse({ ok: false, error: "Bot token is not saved in the Telegram settings panel." }, 401);
+          return jsonResponse(
+            {
+              ok: false,
+              error: "Bot token is not saved in the Telegram settings panel.",
+            },
+            401,
+          );
         }
 
         if (!settings.adminChatId) {
-          return jsonResponse({ ok: false, error: "Admin Chat ID is not saved in the Telegram settings panel." }, 401);
+          return jsonResponse(
+            {
+              ok: false,
+              error:
+                "Admin Chat ID is not saved in the Telegram settings panel.",
+            },
+            401,
+          );
         }
 
-        const verified = await verifyTelegramWebAppInitData(initData, settings.botToken);
+        const verified = await verifyTelegramWebAppInitData(
+          initData,
+          settings.botToken,
+        );
 
         if (!verified.ok || !verified.user) {
-          return jsonResponse({ ok: false, error: "Telegram initData verification failed. Re-save the correct bot token and open the Mini App again from Telegram." }, 401);
+          return jsonResponse(
+            {
+              ok: false,
+              error:
+                "Telegram initData verification failed. Re-save the correct bot token and open the Mini App again from Telegram.",
+            },
+            401,
+          );
         }
 
         const telegramUserId = String(verified.user.id || "");
 
-        if (!constantTimeEqual(telegramUserId, String(settings.adminChatId || ""))) {
-          return jsonResponse({
-            ok: false,
-            error: "Telegram user ID does not match the saved Admin Chat ID.",
-            telegramUserId,
-            savedAdminChatId: settings.adminChatId
-          }, 401);
+        if (
+          !constantTimeEqual(telegramUserId, String(settings.adminChatId || ""))
+        ) {
+          return jsonResponse(
+            {
+              ok: false,
+              error: "Telegram user ID does not match the saved Admin Chat ID.",
+              telegramUserId,
+              savedAdminChatId: settings.adminChatId,
+            },
+            401,
+          );
         }
 
         return jsonResponse({ ok: true, telegramUserId });
       }
 
-      if (url.pathname === "/api/admin/password/change" && request.method === "POST") {
+      if (
+        url.pathname === "/api/admin/password/change" &&
+        request.method === "POST"
+      ) {
         await requireAdmin(request, env);
         const payload = await readJson(request);
         const currentPassword = String(payload.currentPassword || "");
         const newPassword = String(payload.newPassword || "");
 
         if (!(await passwordMatches(currentPassword, env))) {
-          return jsonResponse({ ok: false, error: "رمز عبور فعلی نادرست است." }, 401);
+          return jsonResponse(
+            { ok: false, error: "رمز عبور فعلی نادرست است." },
+            401,
+          );
         }
 
         if (newPassword.length < 8) {
-          return jsonResponse({ ok: false, error: "رمز عبور جدید باید حداقل ۸ کاراکتر باشد." }, 400);
+          return jsonResponse(
+            { ok: false, error: "رمز عبور جدید باید حداقل ۸ کاراکتر باشد." },
+            400,
+          );
         }
 
         const hash = await sha256Hex(newPassword);
@@ -105,14 +163,24 @@ export default {
         await env.CONFIGS_KV.put(ADMIN_PASSWORD_HASH_KEY, hash);
         await env.CONFIGS_KV.put(ADMIN_PASSWORD_META_KEY, JSON.stringify(meta));
 
-        return jsonResponse({ ok: true, message: "رمز عبور با موفقیت تغییر کرد." });
+        return jsonResponse({
+          ok: true,
+          message: "رمز عبور با موفقیت تغییر کرد.",
+        });
       }
 
-      if (url.pathname === "/api/admin/users/create" && request.method === "POST") {
+      if (
+        url.pathname === "/api/admin/users/create" &&
+        request.method === "POST"
+      ) {
         await requireAdmin(request, env);
         const payload = await readJson(request);
         const name = cleanName(payload.name || "");
-        if (!name) return jsonResponse({ ok: false, error: "نام کاربر را وارد کنید." }, 400);
+        if (!name)
+          return jsonResponse(
+            { ok: false, error: "نام کاربر را وارد کنید." },
+            400,
+          );
 
         const users = await getUsers(env);
         const user = {
@@ -122,7 +190,7 @@ export default {
           enabled: true,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
-          lastConfigUpdate: null
+          lastConfigUpdate: null,
         };
 
         users.push(user);
@@ -130,19 +198,31 @@ export default {
         await env.CONFIGS_KV.put(tokenKey(user.token), user.id);
         await env.CONFIGS_KV.put(configKey(user.id), "");
 
-        return jsonResponse({ ok: true, message: "کاربر ایجاد شد.", user: publicUser(user, url, env) });
+        return jsonResponse({
+          ok: true,
+          message: "کاربر ایجاد شد.",
+          user: publicUser(user, url, env),
+        });
       }
 
-      if (url.pathname === "/api/admin/users/update" && request.method === "POST") {
+      if (
+        url.pathname === "/api/admin/users/update" &&
+        request.method === "POST"
+      ) {
         await requireAdmin(request, env);
         const payload = await readJson(request);
         const users = await getUsers(env);
-        const user = users.find(item => item.id === payload.id);
-        if (!user) return jsonResponse({ ok: false, error: "کاربر پیدا نشد." }, 404);
+        const user = users.find((item) => item.id === payload.id);
+        if (!user)
+          return jsonResponse({ ok: false, error: "کاربر پیدا نشد." }, 404);
 
         if (typeof payload.name === "string") {
           const name = cleanName(payload.name);
-          if (!name) return jsonResponse({ ok: false, error: "نام کاربر نمی‌تواند خالی باشد." }, 400);
+          if (!name)
+            return jsonResponse(
+              { ok: false, error: "نام کاربر نمی‌تواند خالی باشد." },
+              400,
+            );
           user.name = name;
         }
 
@@ -158,15 +238,23 @@ export default {
 
         user.updatedAt = new Date().toISOString();
         await saveUsers(env, users);
-        return jsonResponse({ ok: true, message: "اطلاعات کاربر ذخیره شد.", user: publicUser(user, url, env) });
+        return jsonResponse({
+          ok: true,
+          message: "اطلاعات کاربر ذخیره شد.",
+          user: publicUser(user, url, env),
+        });
       }
 
-      if (url.pathname === "/api/admin/users/delete" && request.method === "POST") {
+      if (
+        url.pathname === "/api/admin/users/delete" &&
+        request.method === "POST"
+      ) {
         await requireAdmin(request, env);
         const payload = await readJson(request);
         const users = await getUsers(env);
-        const index = users.findIndex(item => item.id === payload.id);
-        if (index === -1) return jsonResponse({ ok: false, error: "کاربر پیدا نشد." }, 404);
+        const index = users.findIndex((item) => item.id === payload.id);
+        if (index === -1)
+          return jsonResponse({ ok: false, error: "کاربر پیدا نشد." }, 404);
 
         const [removed] = users.splice(index, 1);
         await saveUsers(env, users);
@@ -179,16 +267,22 @@ export default {
         return jsonResponse({ ok: true, message: "کاربر حذف شد." });
       }
 
-      if (url.pathname === "/api/admin/users/configs" && request.method === "GET") {
+      if (
+        url.pathname === "/api/admin/users/configs" &&
+        request.method === "GET"
+      ) {
         await requireAdmin(request, env);
         const userId = url.searchParams.get("id") || "";
         const user = await getUserById(env, userId);
-        if (!user) return jsonResponse({ ok: false, error: "کاربر پیدا نشد." }, 404);
+        if (!user)
+          return jsonResponse({ ok: false, error: "کاربر پیدا نشد." }, 404);
 
-        const configs = await env.CONFIGS_KV.get(configKey(user.id)) || "";
+        const configs = (await env.CONFIGS_KV.get(configKey(user.id))) || "";
         const meta = await getJson(env, metaKey(user.id), {});
         const backupMeta = await getJson(env, backupMetaKey(user.id), {});
-        const backupExists = Boolean(await env.CONFIGS_KV.get(backupConfigKey(user.id)));
+        const backupExists = Boolean(
+          await env.CONFIGS_KV.get(backupConfigKey(user.id)),
+        );
 
         return jsonResponse({
           ok: true,
@@ -197,21 +291,30 @@ export default {
           meta,
           backupMeta,
           backupExists,
-          stats: analyzeConfigs(configs)
+          stats: analyzeConfigs(configs),
         });
       }
 
-      if (url.pathname === "/api/admin/users/configs/save" && request.method === "POST") {
+      if (
+        url.pathname === "/api/admin/users/configs/save" &&
+        request.method === "POST"
+      ) {
         await requireAdmin(request, env);
         const payload = await readJson(request);
         const users = await getUsers(env);
-        const user = users.find(item => item.id === payload.id);
-        if (!user) return jsonResponse({ ok: false, error: "کاربر پیدا نشد." }, 404);
+        const user = users.find((item) => item.id === payload.id);
+        if (!user)
+          return jsonResponse({ ok: false, error: "کاربر پیدا نشد." }, 404);
 
-        const result = await saveConfigsForUser(env, user, String(payload.configs || ""), {
-          normalize: payload.normalize !== false,
-          dedupe: payload.dedupe !== false
-        });
+        const result = await saveConfigsForUser(
+          env,
+          user,
+          String(payload.configs || ""),
+          {
+            normalize: payload.normalize !== false,
+            dedupe: payload.dedupe !== false,
+          },
+        );
 
         user.lastConfigUpdate = result.meta.updatedAt;
         user.updatedAt = result.meta.updatedAt;
@@ -223,23 +326,33 @@ export default {
           user: publicUser(user, url, env),
           configs: result.configs,
           meta: result.meta,
-          stats: result.stats
+          stats: result.stats,
         });
       }
 
-      if (url.pathname === "/api/admin/users/configs/restore" && request.method === "POST") {
+      if (
+        url.pathname === "/api/admin/users/configs/restore" &&
+        request.method === "POST"
+      ) {
         await requireAdmin(request, env);
         const payload = await readJson(request);
         const users = await getUsers(env);
-        const user = users.find(item => item.id === payload.id);
-        if (!user) return jsonResponse({ ok: false, error: "کاربر پیدا نشد." }, 404);
+        const user = users.find((item) => item.id === payload.id);
+        if (!user)
+          return jsonResponse({ ok: false, error: "کاربر پیدا نشد." }, 404);
 
         const backup = await env.CONFIGS_KV.get(backupConfigKey(user.id));
         if (!backup || !backup.trim()) {
-          return jsonResponse({ ok: false, error: "برای این کاربر بکاپی وجود ندارد." }, 404);
+          return jsonResponse(
+            { ok: false, error: "برای این کاربر بکاپی وجود ندارد." },
+            404,
+          );
         }
 
-        const result = await saveConfigsForUser(env, user, backup, { normalize: true, dedupe: true });
+        const result = await saveConfigsForUser(env, user, backup, {
+          normalize: true,
+          dedupe: true,
+        });
         user.lastConfigUpdate = result.meta.updatedAt;
         user.updatedAt = result.meta.updatedAt;
         await saveUsers(env, users);
@@ -250,35 +363,53 @@ export default {
           user: publicUser(user, url, env),
           configs: result.configs,
           meta: result.meta,
-          stats: result.stats
+          stats: result.stats,
         });
       }
 
-      if (url.pathname === "/api/admin/bulk/apply" && request.method === "POST") {
+      if (
+        url.pathname === "/api/admin/bulk/apply" &&
+        request.method === "POST"
+      ) {
         await requireAdmin(request, env);
         const payload = await readJson(request);
         const users = await getUsers(env);
         const mode = payload.mode === "append" ? "append" : "replace";
-        const targetIds = payload.target === "all" ? users.map(user => user.id) : arrayOfStrings(payload.userIds);
-        const selectedUsers = users.filter(user => targetIds.includes(user.id));
+        const targetIds =
+          payload.target === "all"
+            ? users.map((user) => user.id)
+            : arrayOfStrings(payload.userIds);
+        const selectedUsers = users.filter((user) =>
+          targetIds.includes(user.id),
+        );
 
         if (!selectedUsers.length) {
-          return jsonResponse({ ok: false, error: "حداقل یک کاربر را انتخاب کنید." }, 400);
+          return jsonResponse(
+            { ok: false, error: "حداقل یک کاربر را انتخاب کنید." },
+            400,
+          );
         }
 
         let inputConfigs = String(payload.configs || "");
         inputConfigs = normalizeAndDedupeConfigs(inputConfigs).text;
         if (!inputConfigs.trim()) {
-          return jsonResponse({ ok: false, error: "کانفیگ قابل اعمال وارد نشده است." }, 400);
+          return jsonResponse(
+            { ok: false, error: "کانفیگ قابل اعمال وارد نشده است." },
+            400,
+          );
         }
 
         const updatedAt = new Date().toISOString();
         const results = [];
 
         for (const user of selectedUsers) {
-          const current = await env.CONFIGS_KV.get(configKey(user.id)) || "";
-          const nextText = mode === "append" ? current + "\n" + inputConfigs : inputConfigs;
-          const saved = await saveConfigsForUser(env, user, nextText, { normalize: true, dedupe: true });
+          const current = (await env.CONFIGS_KV.get(configKey(user.id))) || "";
+          const nextText =
+            mode === "append" ? current + "\n" + inputConfigs : inputConfigs;
+          const saved = await saveConfigsForUser(env, user, nextText, {
+            normalize: true,
+            dedupe: true,
+          });
           user.lastConfigUpdate = saved.meta.updatedAt;
           user.updatedAt = saved.meta.updatedAt;
           results.push({ id: user.id, name: user.name, stats: saved.stats });
@@ -290,8 +421,8 @@ export default {
           ok: true,
           message: "کانفیگ‌ها برای کاربران انتخاب‌شده اعمال شد.",
           updatedAt,
-          users: users.map(user => publicUser(user, url, env)),
-          results
+          users: users.map((user) => publicUser(user, url, env)),
+          results,
         });
       }
 
@@ -299,19 +430,31 @@ export default {
         await requireAdmin(request, env);
         const userId = url.searchParams.get("id") || "";
         const user = await getUserById(env, userId);
-        if (!user) return new Response("User not found", { status: 404, headers: securityHeaders() });
-        const configs = await env.CONFIGS_KV.get(configKey(user.id)) || "";
+        if (!user)
+          return new Response("User not found", {
+            status: 404,
+            headers: securityHeaders(),
+          });
+        const configs = (await env.CONFIGS_KV.get(configKey(user.id))) || "";
         return new Response(configs, {
           status: 200,
           headers: {
             ...securityHeaders(),
             "content-type": "text/plain; charset=utf-8",
-            "content-disposition": "attachment; filename=\"configs-" + safeFilename(user.name) + "-" + dateStamp() + ".txt\""
-          }
+            "content-disposition":
+              'attachment; filename="configs-' +
+              safeFilename(user.name) +
+              "-" +
+              dateStamp() +
+              '.txt"',
+          },
         });
       }
 
-      if (url.pathname === "/api/admin/telegram/save" && request.method === "POST") {
+      if (
+        url.pathname === "/api/admin/telegram/save" &&
+        request.method === "POST"
+      ) {
         await requireAdmin(request, env);
         const payload = await readJson(request);
         const settings = await getTelegramSettings(env);
@@ -327,39 +470,77 @@ export default {
         settings.updatedAt = new Date().toISOString();
 
         if (settings.enabled && (!settings.botToken || !settings.adminChatId)) {
-          return jsonResponse({ ok: false, error: "توکن بات و شناسه عددی ادمین را وارد کنید." }, 400);
+          return jsonResponse(
+            { ok: false, error: "توکن بات و شناسه عددی ادمین را وارد کنید." },
+            400,
+          );
         }
 
-        await env.CONFIGS_KV.put(TELEGRAM_SETTINGS_KEY, JSON.stringify(settings));
+        await env.CONFIGS_KV.put(
+          TELEGRAM_SETTINGS_KEY,
+          JSON.stringify(settings),
+        );
 
         let webhookResult = null;
         if (settings.enabled) {
-          webhookResult = await configureTelegramEntryPoints(settings, url.origin);
+          webhookResult = await configureTelegramEntryPoints(
+            settings,
+            url.origin,
+          );
         }
 
         return jsonResponse({
           ok: true,
-          message: settings.enabled ? "تنظیمات تلگرام ذخیره و وبهوک فعال شد." : "تنظیمات تلگرام ذخیره شد.",
+          message: settings.enabled
+            ? "تنظیمات تلگرام ذخیره و وبهوک فعال شد."
+            : "تنظیمات تلگرام ذخیره شد.",
           telegram: publicTelegramSettings(settings, url, env),
-          webhookResult
+          webhookResult,
         });
       }
 
-      if (url.pathname === "/api/admin/telegram/test" && request.method === "POST") {
+      if (
+        url.pathname === "/api/admin/telegram/test" &&
+        request.method === "POST"
+      ) {
         await requireAdmin(request, env);
         const settings = await getTelegramSettings(env);
         if (!settings.enabled || !settings.botToken || !settings.adminChatId) {
-          return jsonResponse({ ok: false, error: "تنظیمات تلگرام کامل یا فعال نیست." }, 400);
+          return jsonResponse(
+            { ok: false, error: "تنظیمات تلگرام کامل یا فعال نیست." },
+            400,
+          );
         }
-        const sent = await telegramSend(settings.botToken, settings.adminChatId, "اتصال ربات تلگرام با موفقیت برقرار شد. از دکمه‌های زیر می‌توانید استفاده کنید.", telegramReplyKeyboard(url.origin));
-        return jsonResponse({ ok: true, message: "پیام تست ارسال شد.", telegramResult: sent });
+        const sent = await telegramSend(
+          settings.botToken,
+          settings.adminChatId,
+          "اتصال ربات تلگرام با موفقیت برقرار شد. از دکمه‌های زیر می‌توانید استفاده کنید.",
+          telegramReplyKeyboard(url.origin),
+        );
+        return jsonResponse({
+          ok: true,
+          message: "پیام تست ارسال شد.",
+          telegramResult: sent,
+        });
       }
 
-      if (url.pathname.startsWith("/telegram/webhook/") && request.method === "POST") {
-        const secret = decodeURIComponent(url.pathname.slice("/telegram/webhook/".length));
+      if (
+        url.pathname.startsWith("/telegram/webhook/") &&
+        request.method === "POST"
+      ) {
+        const secret = decodeURIComponent(
+          url.pathname.slice("/telegram/webhook/".length),
+        );
         const settings = await getTelegramSettings(env);
-        if (!settings.enabled || !settings.webhookSecret || !constantTimeEqual(secret, settings.webhookSecret)) {
-          return new Response("Not found", { status: 404, headers: securityHeaders() });
+        if (
+          !settings.enabled ||
+          !settings.webhookSecret ||
+          !constantTimeEqual(secret, settings.webhookSecret)
+        ) {
+          return new Response("Not found", {
+            status: 404,
+            headers: securityHeaders(),
+          });
         }
         const update = await readJson(request);
         await handleTelegramUpdate(update, env, settings, url.origin);
@@ -367,16 +548,25 @@ export default {
       }
 
       if (url.pathname.startsWith("/sub/") && request.method === "GET") {
-        const token = decodeURIComponent(url.pathname.slice("/sub/".length).split("/")[0] || "");
+        const token = decodeURIComponent(
+          url.pathname.slice("/sub/".length).split("/")[0] || "",
+        );
         const userId = await env.CONFIGS_KV.get(tokenKey(token));
-        if (!userId) return new Response("Not found", { status: 404, headers: securityHeaders() });
+        if (!userId)
+          return new Response("Not found", {
+            status: 404,
+            headers: securityHeaders(),
+          });
 
         const user = await getUserById(env, userId);
         if (!user || !user.enabled || !constantTimeEqual(token, user.token)) {
-          return new Response("Not found", { status: 404, headers: securityHeaders() });
+          return new Response("Not found", {
+            status: 404,
+            headers: securityHeaders(),
+          });
         }
 
-        const configs = await env.CONFIGS_KV.get(configKey(user.id)) || "";
+        const configs = (await env.CONFIGS_KV.get(configKey(user.id))) || "";
         const clean = normalizeAndDedupeConfigs(configs).text;
         if (!clean.trim()) {
           return new Response("No configs found", {
@@ -384,8 +574,8 @@ export default {
             headers: {
               ...securityHeaders(),
               "content-type": "text/plain; charset=utf-8",
-              "cache-control": "no-store"
-            }
+              "cache-control": "no-store",
+            },
           });
         }
 
@@ -398,12 +588,16 @@ export default {
             ...securityHeaders(),
             "content-type": "text/plain; charset=utf-8",
             "cache-control": "no-store, no-cache, must-revalidate",
-            "subscription-userinfo": "upload=0; download=0; total=107374182400; expire=4102444800"
-          }
+            "subscription-userinfo":
+              "upload=0; download=0; total=107374182400; expire=4102444800",
+          },
         });
       }
 
-      return new Response("Not found", { status: 404, headers: securityHeaders() });
+      return new Response("Not found", {
+        status: 404,
+        headers: securityHeaders(),
+      });
     } catch (error) {
       const status = Number(error && error.status) || 500;
 
@@ -412,16 +606,22 @@ export default {
       }
 
       if (error && error.expose === true) {
-        return jsonResponse({ ok: false, error: String(error.message || error) }, status);
+        return jsonResponse(
+          { ok: false, error: String(error.message || error) },
+          status,
+        );
       }
 
-      return jsonResponse({
-        ok: false,
-        error: "خطای داخلی Worker",
-        details: String(error && error.message ? error.message : error)
-      }, 500);
+      return jsonResponse(
+        {
+          ok: false,
+          error: "خطای داخلی Worker",
+          details: String(error && error.message ? error.message : error),
+        },
+        500,
+      );
     }
-  }
+  },
 };
 
 async function requireAdmin(request, env) {
@@ -452,7 +652,10 @@ async function telegramMiniAppMatches(request, env) {
   const settings = await getTelegramSettings(env);
   if (!settings || !settings.botToken || !settings.adminChatId) return false;
 
-  const verified = await verifyTelegramWebAppInitData(initData, settings.botToken);
+  const verified = await verifyTelegramWebAppInitData(
+    initData,
+    settings.botToken,
+  );
   if (!verified.ok || !verified.user) return false;
 
   const telegramUserId = String(verified.user.id || "");
@@ -504,13 +707,13 @@ async function hmacSHA256Raw(key, message) {
     typeof key === "string" ? new TextEncoder().encode(key) : key,
     { name: "HMAC", hash: "SHA-256" },
     false,
-    ["sign"]
+    ["sign"],
   );
 
   const signature = await crypto.subtle.sign(
     "HMAC",
     cryptoKey,
-    new TextEncoder().encode(String(message))
+    new TextEncoder().encode(String(message)),
   );
 
   return new Uint8Array(signature);
@@ -518,7 +721,9 @@ async function hmacSHA256Raw(key, message) {
 
 async function hmacSHA256Hex(key, message) {
   const raw = await hmacSHA256Raw(key, message);
-  return Array.from(raw).map(byte => byte.toString(16).padStart(2, "0")).join("");
+  return Array.from(raw)
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 async function passwordMatches(password, env) {
@@ -533,11 +738,17 @@ async function passwordMatches(password, env) {
   }
 
   if (constantTimeEqual(password, DEFAULT_ADMIN_PASSWORD)) {
-    await env.CONFIGS_KV.put(ADMIN_PASSWORD_HASH_KEY, await sha256Hex(DEFAULT_ADMIN_PASSWORD));
-    await env.CONFIGS_KV.put(ADMIN_PASSWORD_META_KEY, JSON.stringify({
-      updatedAt: new Date().toISOString(),
-      source: "auto-init"
-    }));
+    await env.CONFIGS_KV.put(
+      ADMIN_PASSWORD_HASH_KEY,
+      await sha256Hex(DEFAULT_ADMIN_PASSWORD),
+    );
+    await env.CONFIGS_KV.put(
+      ADMIN_PASSWORD_META_KEY,
+      JSON.stringify({
+        updatedAt: new Date().toISOString(),
+        source: "auto-init",
+      }),
+    );
 
     return true;
   }
@@ -554,7 +765,9 @@ function normalizePassword(value) {
 
 function assertKvBinding(env) {
   if (!env || !env.CONFIGS_KV) {
-    const error = new Error("KV Binding named CONFIGS_KV is not connected to this Worker.");
+    const error = new Error(
+      "KV Binding named CONFIGS_KV is not connected to this Worker.",
+    );
     error.status = 500;
     error.expose = true;
     throw error;
@@ -582,7 +795,7 @@ async function saveUsers(env, users) {
 
 async function getUserById(env, id) {
   const users = await getUsers(env);
-  return users.find(user => user.id === id) || null;
+  return users.find((user) => user.id === id) || null;
 }
 
 function publicUser(user, url, env) {
@@ -598,8 +811,8 @@ function publicUser(user, url, env) {
     token: user.token,
     links: {
       raw: base + "/sub/" + token,
-      base64: base + "/sub/" + token + "?format=base64"
-    }
+      base64: base + "/sub/" + token + "?format=base64",
+    },
   };
 }
 
@@ -630,7 +843,8 @@ async function saveConfigsForUser(env, user, inputText, options = {}) {
 
   if (oldConfigs && oldConfigs.trim()) {
     await env.CONFIGS_KV.put(backupConfigKey(user.id), oldConfigs);
-    if (oldMeta) await env.CONFIGS_KV.put(backupMetaKey(user.id), JSON.stringify(oldMeta));
+    if (oldMeta)
+      await env.CONFIGS_KV.put(backupMetaKey(user.id), JSON.stringify(oldMeta));
   }
 
   const stats = analyzeConfigs(configs);
@@ -641,7 +855,7 @@ async function saveConfigsForUser(env, user, inputText, options = {}) {
     count: stats.total,
     validCount: stats.valid,
     unknownCount: stats.unknown,
-    duplicatesRemovedByContent: stats.duplicatesByContent
+    duplicatesRemovedByContent: stats.duplicatesByContent,
   };
 
   await env.CONFIGS_KV.put(configKey(user.id), configs);
@@ -658,7 +872,7 @@ function normalizeAndDedupeConfigs(text, options = {}) {
     .replace(/\r\n/g, "\n")
     .replace(/\r/g, "\n")
     .split("\n")
-    .map(line => line.trim())
+    .map((line) => line.trim())
     .filter(Boolean);
 
   const output = [];
@@ -714,9 +928,22 @@ function canonicalConfigKey(line) {
 }
 
 function analyzeConfigs(text) {
-  const schemes = ["vless://", "vmess://", "trojan://", "ss://", "ssr://", "hysteria://", "hysteria2://", "hy2://", "tuic://"];
-  const lines = String(text || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
-  const clean = lines.map(line => line.trim());
+  const schemes = [
+    "vless://",
+    "vmess://",
+    "trojan://",
+    "ss://",
+    "ssr://",
+    "hysteria://",
+    "hysteria2://",
+    "hy2://",
+    "tuic://",
+  ];
+  const lines = String(text || "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .split("\n");
+  const clean = lines.map((line) => line.trim());
   const nonEmpty = clean.filter(Boolean);
   const seenExact = new Set();
   const seenContent = new Set();
@@ -734,7 +961,7 @@ function analyzeConfigs(text) {
     if (seenContent.has(contentKey)) duplicatesByContent++;
     seenContent.add(contentKey);
 
-    const scheme = schemes.find(item => line.toLowerCase().startsWith(item));
+    const scheme = schemes.find((item) => line.toLowerCase().startsWith(item));
     if (scheme) {
       valid++;
       const key = scheme.replace("://", "");
@@ -752,7 +979,7 @@ function analyzeConfigs(text) {
     duplicates,
     duplicatesByContent,
     unique: seenContent.size,
-    byType
+    byType,
   };
 }
 
@@ -762,12 +989,14 @@ async function getTelegramSettings(env) {
     botToken: "",
     adminChatId: "",
     webhookSecret: "",
-    updatedAt: null
+    updatedAt: null,
   });
 }
 
 function publicTelegramSettings(settings, url, env) {
-  const base = (env && env.PUBLIC_BASE_URL ? env.PUBLIC_BASE_URL : url.origin).replace(/\/$/, "");
+  const base = (
+    env && env.PUBLIC_BASE_URL ? env.PUBLIC_BASE_URL : url.origin
+  ).replace(/\/$/, "");
   const miniAppUrl = base + "/tg-app";
 
   return {
@@ -775,9 +1004,11 @@ function publicTelegramSettings(settings, url, env) {
     adminChatId: settings.adminChatId || "",
     botTokenSaved: Boolean(settings.botToken),
     botTokenPreview: settings.botToken ? maskToken(settings.botToken) : "",
-    webhookUrl: settings.webhookSecret ? base + "/telegram/webhook/" + encodeURIComponent(settings.webhookSecret) : "",
+    webhookUrl: settings.webhookSecret
+      ? base + "/telegram/webhook/" + encodeURIComponent(settings.webhookSecret)
+      : "",
     miniAppUrl,
-    updatedAt: settings.updatedAt || null
+    updatedAt: settings.updatedAt || null,
   };
 }
 
@@ -790,7 +1021,7 @@ async function configureTelegramEntryPoints(settings, origin) {
       settings.botToken,
       settings.adminChatId,
       telegramStartText(settings.adminChatId),
-      telegramReplyKeyboard(origin)
+      telegramReplyKeyboard(origin),
     );
   }
 
@@ -798,30 +1029,43 @@ async function configureTelegramEntryPoints(settings, origin) {
 }
 
 async function setTelegramWebhook(settings, origin) {
-  const webhookUrl = origin.replace(/\/$/, "") + "/telegram/webhook/" + encodeURIComponent(settings.webhookSecret);
-  const response = await fetch("https://api.telegram.org/bot" + settings.botToken + "/setWebhook", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ url: webhookUrl, drop_pending_updates: true })
-  });
-  return await response.json().catch(() => ({ ok: false, description: "پاسخ تلگرام نامعتبر بود." }));
+  const webhookUrl =
+    origin.replace(/\/$/, "") +
+    "/telegram/webhook/" +
+    encodeURIComponent(settings.webhookSecret);
+  const response = await fetch(
+    "https://api.telegram.org/bot" + settings.botToken + "/setWebhook",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ url: webhookUrl, drop_pending_updates: true }),
+    },
+  );
+  return await response
+    .json()
+    .catch(() => ({ ok: false, description: "پاسخ تلگرام نامعتبر بود." }));
 }
 
 async function setTelegramMenuButton(settings, origin) {
   const miniAppUrl = origin.replace(/\/$/, "") + "/tg-app";
-  const response = await fetch("https://api.telegram.org/bot" + settings.botToken + "/setChatMenuButton", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      chat_id: settings.adminChatId,
-      menu_button: {
-        type: "web_app",
-        text: "پنل مدیریت",
-        web_app: { url: miniAppUrl }
-      }
-    })
-  });
-  return await response.json().catch(() => ({ ok: false, description: "پاسخ تلگرام نامعتبر بود." }));
+  const response = await fetch(
+    "https://api.telegram.org/bot" + settings.botToken + "/setChatMenuButton",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        chat_id: settings.adminChatId,
+        menu_button: {
+          type: "web_app",
+          text: "پنل مدیریت",
+          web_app: { url: miniAppUrl },
+        },
+      }),
+    },
+  );
+  return await response
+    .json()
+    .catch(() => ({ ok: false, description: "پاسخ تلگرام نامعتبر بود." }));
 }
 
 async function setTelegramCommands(settings) {
@@ -842,26 +1086,33 @@ async function setTelegramCommands(settings) {
     { command: "apply_users", description: "جایگزینی کانفیگ چند کاربر" },
     { command: "append_users", description: "افزودن کانفیگ چند کاربر" },
     { command: "password", description: "تغییر رمز عبور پنل" },
-    { command: "webhook", description: "تنظیم مجدد وبهوک و دستورها" }
+    { command: "webhook", description: "تنظیم مجدد وبهوک و دستورها" },
   ];
 
-  const scopes = [
-    { type: "default" },
-    { type: "all_private_chats" }
-  ];
+  const scopes = [{ type: "default" }, { type: "all_private_chats" }];
 
   if (settings.adminChatId) {
-    scopes.push({ type: "chat", chat_id: Number(settings.adminChatId) || settings.adminChatId });
+    scopes.push({
+      type: "chat",
+      chat_id: Number(settings.adminChatId) || settings.adminChatId,
+    });
   }
 
   const results = [];
   for (const scope of scopes) {
-    const response = await fetch("https://api.telegram.org/bot" + settings.botToken + "/setMyCommands", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ commands, scope })
-    });
-    results.push(await response.json().catch(() => ({ ok: false, description: "پاسخ تلگرام نامعتبر بود." })));
+    const response = await fetch(
+      "https://api.telegram.org/bot" + settings.botToken + "/setMyCommands",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ commands, scope }),
+      },
+    );
+    results.push(
+      await response
+        .json()
+        .catch(() => ({ ok: false, description: "پاسخ تلگرام نامعتبر بود." })),
+    );
   }
 
   return results;
@@ -872,22 +1123,31 @@ async function telegramSend(botToken, chatId, text, replyMarkup = null) {
     chat_id: chatId,
     text,
     parse_mode: "HTML",
-    disable_web_page_preview: true
+    disable_web_page_preview: true,
   };
 
   if (replyMarkup) {
     payload.reply_markup = replyMarkup;
   }
 
-  const response = await fetch("https://api.telegram.org/bot" + botToken + "/sendMessage", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload)
-  });
+  const response = await fetch(
+    "https://api.telegram.org/bot" + botToken + "/sendMessage",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+  );
   return await response.json().catch(() => ({ ok: false }));
 }
 
-async function telegramEditMessage(botToken, chatId, messageId, text, replyMarkup = null) {
+async function telegramEditMessage(
+  botToken,
+  chatId,
+  messageId,
+  text,
+  replyMarkup = null,
+) {
   if (!messageId) {
     return telegramSend(botToken, chatId, text, replyMarkup);
   }
@@ -897,31 +1157,52 @@ async function telegramEditMessage(botToken, chatId, messageId, text, replyMarku
     message_id: messageId,
     text,
     parse_mode: "HTML",
-    disable_web_page_preview: true
+    disable_web_page_preview: true,
   };
 
   if (replyMarkup) {
     payload.reply_markup = replyMarkup;
   }
 
-  const response = await fetch("https://api.telegram.org/bot" + botToken + "/editMessageText", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload)
-  });
+  const response = await fetch(
+    "https://api.telegram.org/bot" + botToken + "/editMessageText",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+  );
 
   const result = await response.json().catch(() => ({ ok: false }));
 
-  if (!result.ok && String(result.description || "").includes("message is not modified")) {
+  if (
+    !result.ok &&
+    String(result.description || "").includes("message is not modified")
+  ) {
     return { ok: true, unchanged: true };
   }
 
   return result;
 }
 
-async function telegramEditCallbackMessage(callbackQuery, settings, chatId, text, replyMarkup = null) {
-  const messageId = callbackQuery && callbackQuery.message ? callbackQuery.message.message_id : null;
-  const result = await telegramEditMessage(settings.botToken, chatId, messageId, text, replyMarkup);
+async function telegramEditCallbackMessage(
+  callbackQuery,
+  settings,
+  chatId,
+  text,
+  replyMarkup = null,
+) {
+  const messageId =
+    callbackQuery && callbackQuery.message
+      ? callbackQuery.message.message_id
+      : null;
+  const result = await telegramEditMessage(
+    settings.botToken,
+    chatId,
+    messageId,
+    text,
+    replyMarkup,
+  );
 
   if (!result || result.ok !== true) {
     return telegramSend(settings.botToken, chatId, text, replyMarkup);
@@ -930,20 +1211,35 @@ async function telegramEditCallbackMessage(callbackQuery, settings, chatId, text
   return result;
 }
 
-async function telegramStateReply(botToken, chatId, state, text, replyMarkup = null) {
+async function telegramStateReply(
+  botToken,
+  chatId,
+  state,
+  text,
+  replyMarkup = null,
+) {
   if (state && state.messageId) {
-    const result = await telegramEditMessage(botToken, chatId, state.messageId, text, replyMarkup);
+    const result = await telegramEditMessage(
+      botToken,
+      chatId,
+      state.messageId,
+      text,
+      replyMarkup,
+    );
     if (result && result.ok === true) return result;
   }
   return telegramSend(botToken, chatId, text, replyMarkup);
 }
 
 async function telegramAnswerCallback(botToken, callbackQueryId, text = "") {
-  const response = await fetch("https://api.telegram.org/bot" + botToken + "/answerCallbackQuery", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ callback_query_id: callbackQueryId, text })
-  });
+  const response = await fetch(
+    "https://api.telegram.org/bot" + botToken + "/answerCallbackQuery",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ callback_query_id: callbackQueryId, text }),
+    },
+  );
   return await response.json().catch(() => ({ ok: false }));
 }
 
@@ -953,10 +1249,10 @@ function telegramReplyKeyboard(origin) {
       [{ text: "👥 کاربران" }, { text: "➕ افزودن کاربر" }],
       [{ text: "📦 اعمال گروهی" }, { text: "📄 ارسال فایل" }],
       [{ text: "🔐 تغییر رمز" }, { text: "📋 لیست دستورات" }],
-      [{ text: "❓ راهنما" }, { text: "❌ لغو" }]
+      [{ text: "❓ راهنما" }, { text: "❌ لغو" }],
     ],
     resize_keyboard: true,
-    is_persistent: true
+    is_persistent: true,
   };
 }
 
@@ -965,26 +1261,28 @@ function telegramInlineKeyboard(origin) {
     inline_keyboard: [
       [
         { text: "👥 مدیریت کاربران", callback_data: "tg:users" },
-        { text: "➕ افزودن کاربر", callback_data: "tg:create_user" }
+        { text: "➕ افزودن کاربر", callback_data: "tg:create_user" },
       ],
       [
         { text: "📦 اعمال گروهی", callback_data: "tg:bulk_menu" },
-        { text: "🔐 تغییر رمز", callback_data: "tg:password" }
+        { text: "🔐 تغییر رمز", callback_data: "tg:password" },
       ],
       [
         { text: "📄 ارسال فایل", callback_data: "tg:file_help" },
-        { text: "📋 دستورات", callback_data: "tg:commands" }
+        { text: "📋 دستورات", callback_data: "tg:commands" },
       ],
-      [{ text: "❓ راهنما", callback_data: "tg:help" }]
-    ]
+      [{ text: "❓ راهنما", callback_data: "tg:help" }],
+    ],
   };
 }
 
 function telegramUsersKeyboard(users) {
-  const rows = users.slice(0, 30).map(user => ([{
-    text: (user.enabled !== false ? "🟢 " : "🔴 ") + user.name,
-    callback_data: "tg:user:" + user.id
-  }]));
+  const rows = users.slice(0, 30).map((user) => [
+    {
+      text: (user.enabled !== false ? "🟢 " : "🔴 ") + user.name,
+      callback_data: "tg:user:" + user.id,
+    },
+  ]);
   rows.push([{ text: "➕ افزودن کاربر", callback_data: "tg:create_user" }]);
   rows.push([{ text: "بازگشت", callback_data: "tg:home" }]);
   return { inline_keyboard: rows };
@@ -993,24 +1291,41 @@ function telegramUsersKeyboard(users) {
 function telegramUserActionsKeyboard(user, origin) {
   return {
     inline_keyboard: [
-      [{ text: "🔗 لینک‌های کانفیگ", callback_data: "tg:user_links:" + user.id }],
+      [
+        {
+          text: "🔗 لینک‌های کانفیگ",
+          callback_data: "tg:user_links:" + user.id,
+        },
+      ],
       [
         { text: "📝 جایگزینی کانفیگ", callback_data: "tg:user_set:" + user.id },
-        { text: "➕ افزودن کانفیگ", callback_data: "tg:user_append:" + user.id }
+        {
+          text: "➕ افزودن کانفیگ",
+          callback_data: "tg:user_append:" + user.id,
+        },
       ],
       [
-        { text: "📊 خلاصه کانفیگ", callback_data: "tg:user_summary:" + user.id },
-        { text: "✏️ تغییر نام", callback_data: "tg:user_rename:" + user.id }
+        {
+          text: "📊 خلاصه کانفیگ",
+          callback_data: "tg:user_summary:" + user.id,
+        },
+        { text: "✏️ تغییر نام", callback_data: "tg:user_rename:" + user.id },
       ],
       [
-        { text: user.enabled !== false ? "🔴 غیرفعال‌سازی" : "🟢 فعال‌سازی", callback_data: "tg:user_toggle:" + user.id },
-        { text: "♻️ توکن جدید", callback_data: "tg:user_regen_confirm:" + user.id }
+        {
+          text: user.enabled !== false ? "🔴 غیرفعال‌سازی" : "🟢 فعال‌سازی",
+          callback_data: "tg:user_toggle:" + user.id,
+        },
+        {
+          text: "♻️ توکن جدید",
+          callback_data: "tg:user_regen_confirm:" + user.id,
+        },
       ],
       [
         { text: "🗑 حذف", callback_data: "tg:user_delete_confirm:" + user.id },
-        { text: "👥 کاربران", callback_data: "tg:users" }
-      ]
-    ]
+        { text: "👥 کاربران", callback_data: "tg:users" },
+      ],
+    ],
   };
 }
 
@@ -1019,9 +1334,9 @@ function telegramConfirmKeyboard(action, id, backData = "tg:users") {
     inline_keyboard: [
       [
         { text: "✅ تأیید", callback_data: action + ":" + id },
-        { text: "انصراف", callback_data: backData }
-      ]
-    ]
+        { text: "انصراف", callback_data: backData },
+      ],
+    ],
   };
 }
 
@@ -1030,24 +1345,37 @@ function telegramBulkModeKeyboard() {
     inline_keyboard: [
       [
         { text: "جایگزینی برای همه", callback_data: "tg:bulk_all:replace" },
-        { text: "افزودن برای همه", callback_data: "tg:bulk_all:append" }
+        { text: "افزودن برای همه", callback_data: "tg:bulk_all:append" },
       ],
       [
-        { text: "انتخاب کاربران برای جایگزینی", callback_data: "tg:bulk_select:replace" },
-        { text: "انتخاب کاربران برای افزودن", callback_data: "tg:bulk_select:append" }
+        {
+          text: "انتخاب کاربران برای جایگزینی",
+          callback_data: "tg:bulk_select:replace",
+        },
+        {
+          text: "انتخاب کاربران برای افزودن",
+          callback_data: "tg:bulk_select:append",
+        },
       ],
-      [{ text: "بازگشت", callback_data: "tg:home" }]
-    ]
+      [{ text: "بازگشت", callback_data: "tg:home" }],
+    ],
   };
 }
 
 function telegramBulkSelectKeyboard(users, selectedIds = []) {
   const selected = new Set(selectedIds);
-  const rows = users.slice(0, 30).map(user => ([{
-    text: (selected.has(user.id) ? "✅ " : "✖️ ") + user.name,
-    callback_data: "tg:bulk_toggle:" + user.id
-  }]));
-  rows.push([{ text: "ادامه و ارسال کانفیگ", callback_data: "tg:bulk_selected_continue" }]);
+  const rows = users.slice(0, 30).map((user) => [
+    {
+      text: (selected.has(user.id) ? "✅ " : "✖️ ") + user.name,
+      callback_data: "tg:bulk_toggle:" + user.id,
+    },
+  ]);
+  rows.push([
+    {
+      text: "ادامه و ارسال کانفیگ",
+      callback_data: "tg:bulk_selected_continue",
+    },
+  ]);
   rows.push([{ text: "انصراف", callback_data: "tg:bulk_menu" }]);
   return { inline_keyboard: rows };
 }
@@ -1061,15 +1389,33 @@ async function getTelegramControlMessageId(env, chatId) {
 
 async function setTelegramControlMessageId(env, chatId, messageId) {
   if (messageId) {
-    await env.CONFIGS_KV.put(telegramControlMessageKey(chatId), String(messageId), { expirationTtl: 172800 });
+    await env.CONFIGS_KV.put(
+      telegramControlMessageKey(chatId),
+      String(messageId),
+      { expirationTtl: 172800 },
+    );
   }
 }
 
-async function telegramControlMessage(botToken, chatId, text, replyMarkup, env) {
-  const oldMessageId = env ? await getTelegramControlMessageId(env, chatId) : null;
+async function telegramControlMessage(
+  botToken,
+  chatId,
+  text,
+  replyMarkup,
+  env,
+) {
+  const oldMessageId = env
+    ? await getTelegramControlMessageId(env, chatId)
+    : null;
 
   if (oldMessageId) {
-    const edited = await telegramEditMessage(botToken, chatId, oldMessageId, text, replyMarkup);
+    const edited = await telegramEditMessage(
+      botToken,
+      chatId,
+      oldMessageId,
+      text,
+      replyMarkup,
+    );
     if (edited && edited.ok) {
       return edited;
     }
@@ -1081,7 +1427,6 @@ async function telegramControlMessage(botToken, chatId, text, replyMarkup, env) 
   }
   return sent;
 }
-
 
 async function handleTelegramUpdate(update, env, settings, origin) {
   if (update.callback_query) {
@@ -1104,13 +1449,32 @@ async function handleTelegramUpdate(update, env, settings, origin) {
 
   if (message.document) {
     const caption = normalizeTelegramText(String(message.caption || "").trim());
-    const reply = await handleTelegramConfigDocument(message.document, caption, state, chatId, env, settings, origin);
-    await telegramStateReply(settings.botToken, chatId, state, reply, telegramInlineKeyboard(origin));
+    const reply = await handleTelegramConfigDocument(
+      message.document,
+      caption,
+      state,
+      chatId,
+      env,
+      settings,
+      origin,
+    );
+    await telegramStateReply(
+      settings.botToken,
+      chatId,
+      state,
+      reply,
+      telegramInlineKeyboard(origin),
+    );
     return;
   }
 
   if (typeof message.text !== "string") {
-    await telegramSend(settings.botToken, chatId, "این پیام قابل پردازش نیست. برای ارسال کانفیگ با فایل، دکمه «📄 ارسال فایل» را بزنید.", telegramReplyKeyboard(origin));
+    await telegramSend(
+      settings.botToken,
+      chatId,
+      "این پیام قابل پردازش نیست. برای ارسال کانفیگ با فایل، دکمه «📄 ارسال فایل» را بزنید.",
+      telegramReplyKeyboard(origin),
+    );
     return;
   }
 
@@ -1119,74 +1483,187 @@ async function handleTelegramUpdate(update, env, settings, origin) {
   if (text === "/cancel") {
     const activeState = await getTelegramState(env, chatId);
     await clearTelegramState(env, chatId);
-    await telegramStateReply(settings.botToken, chatId, activeState, "عملیات جاری لغو شد.", telegramInlineKeyboard(origin));
+    await telegramStateReply(
+      settings.botToken,
+      chatId,
+      activeState,
+      "عملیات جاری لغو شد.",
+      telegramInlineKeyboard(origin),
+    );
     return;
   }
 
   if (state && !text.startsWith("/")) {
-    const reply = await handleTelegramStateInput(text, state, chatId, env, settings, origin);
-    await telegramStateReply(settings.botToken, chatId, state, reply, telegramInlineKeyboard(origin));
+    const reply = await handleTelegramStateInput(
+      text,
+      state,
+      chatId,
+      env,
+      settings,
+      origin,
+    );
+    await telegramStateReply(
+      settings.botToken,
+      chatId,
+      state,
+      reply,
+      telegramInlineKeyboard(origin),
+    );
     return;
   }
 
   if (text === "/users") {
     const users = await getUsers(env);
-    await telegramControlMessage(settings.botToken, chatId, users.length ? "کاربر مورد نظر را انتخاب کنید:" : "هنوز کاربری ایجاد نشده است.", users.length ? telegramUsersKeyboard(users) : telegramInlineKeyboard(origin), env);
+    await telegramControlMessage(
+      settings.botToken,
+      chatId,
+      users.length
+        ? "کاربر مورد نظر را انتخاب کنید:"
+        : "هنوز کاربری ایجاد نشده است.",
+      users.length
+        ? telegramUsersKeyboard(users)
+        : telegramInlineKeyboard(origin),
+      env,
+    );
     return;
   }
 
   if (text === "/bulk") {
-    await telegramControlMessage(settings.botToken, chatId, "نوع اعمال گروهی را انتخاب کنید:", telegramBulkModeKeyboard(), env);
+    await telegramControlMessage(
+      settings.botToken,
+      chatId,
+      "نوع اعمال گروهی را انتخاب کنید:",
+      telegramBulkModeKeyboard(),
+      env,
+    );
     return;
   }
 
   if (text === "/newuser") {
     await setTelegramState(env, chatId, { action: "create_user" });
-    const sentNewUser = await telegramControlMessage(settings.botToken, chatId, "نام کاربر جدید را ارسال کنید.\nبرای لغو، /cancel را بزنید.", telegramInlineKeyboard(origin), env);
-    if (sentNewUser && sentNewUser.result && sentNewUser.result.message_id) await setTelegramState(env, chatId, { action: "create_user", messageId: sentNewUser.result.message_id });
+    const sentNewUser = await telegramControlMessage(
+      settings.botToken,
+      chatId,
+      "نام کاربر جدید را ارسال کنید.\nبرای لغو، /cancel را بزنید.",
+      telegramInlineKeyboard(origin),
+      env,
+    );
+    if (sentNewUser && sentNewUser.result && sentNewUser.result.message_id)
+      await setTelegramState(env, chatId, {
+        action: "create_user",
+        messageId: sentNewUser.result.message_id,
+      });
     return;
   }
 
   if (text === "/password_change") {
     await setTelegramState(env, chatId, { action: "change_password" });
-    const sentPass = await telegramControlMessage(settings.botToken, chatId, "رمز عبور جدید پنل را ارسال کنید. حداقل ۸ کاراکتر.\nبرای لغو، /cancel را بزنید.", telegramInlineKeyboard(origin), env);
-    if (sentPass && sentPass.result && sentPass.result.message_id) await setTelegramState(env, chatId, { action: "change_password", messageId: sentPass.result.message_id });
+    const sentPass = await telegramControlMessage(
+      settings.botToken,
+      chatId,
+      "رمز عبور جدید پنل را ارسال کنید. حداقل ۸ کاراکتر.\nبرای لغو، /cancel را بزنید.",
+      telegramInlineKeyboard(origin),
+      env,
+    );
+    if (sentPass && sentPass.result && sentPass.result.message_id)
+      await setTelegramState(env, chatId, {
+        action: "change_password",
+        messageId: sentPass.result.message_id,
+      });
     return;
   }
 
   const reply = await runTelegramCommand(text, env, origin, settings);
-  const markup = shouldShowTelegramInlineKeyboard(text) ? telegramInlineKeyboard(origin) : telegramReplyKeyboard(origin);
+  const markup = shouldShowTelegramInlineKeyboard(text)
+    ? telegramInlineKeyboard(origin)
+    : telegramReplyKeyboard(origin);
 
   if (text === "/start") {
-    const sentStart = await telegramSend(settings.botToken, chatId, reply, telegramInlineKeyboard(origin));
-    if (sentStart && sentStart.ok && sentStart.result && sentStart.result.message_id) {
-      await setTelegramControlMessageId(env, chatId, sentStart.result.message_id);
+    const sentStart = await telegramSend(
+      settings.botToken,
+      chatId,
+      reply,
+      telegramInlineKeyboard(origin),
+    );
+    if (
+      sentStart &&
+      sentStart.ok &&
+      sentStart.result &&
+      sentStart.result.message_id
+    ) {
+      await setTelegramControlMessageId(
+        env,
+        chatId,
+        sentStart.result.message_id,
+      );
     }
     return;
   }
 
-  await telegramControlMessage(settings.botToken, chatId, reply, markup.inline_keyboard ? markup : telegramInlineKeyboard(origin), env);
+  await telegramControlMessage(
+    settings.botToken,
+    chatId,
+    reply,
+    markup.inline_keyboard ? markup : telegramInlineKeyboard(origin),
+    env,
+  );
 }
 
-async function handleTelegramConfigDocument(document, caption, state, chatId, env, settings, origin) {
-  const fileText = await telegramDownloadDocumentText(settings.botToken, document);
+async function handleTelegramConfigDocument(
+  document,
+  caption,
+  state,
+  chatId,
+  env,
+  settings,
+  origin,
+) {
+  const fileText = await telegramDownloadDocumentText(
+    settings.botToken,
+    document,
+  );
   if (!fileText.trim()) {
     return "فایل ارسال‌شده خالی است یا متن قابل خواندن ندارد.";
   }
 
-  if (state && ["set_configs", "append_configs", "bulk_configs"].includes(state.action)) {
-    return await handleTelegramStateInput(fileText, state, chatId, env, settings, origin, true);
+  if (
+    state &&
+    ["set_configs", "append_configs", "bulk_configs"].includes(state.action)
+  ) {
+    return await handleTelegramStateInput(
+      fileText,
+      state,
+      chatId,
+      env,
+      settings,
+      origin,
+      true,
+    );
   }
 
-  const commandLine = String(caption || "").split("\n")[0].trim();
+  const commandLine = String(caption || "")
+    .split("\n")[0]
+    .trim();
   const command = (commandLine.split(/\s+/)[0] || "").toLowerCase();
-  const allowed = new Set(["/setconfigs", "/appendconfigs", "/apply_all", "/append_all", "/apply_users", "/append_users"]);
+  const allowed = new Set([
+    "/setconfigs",
+    "/appendconfigs",
+    "/apply_all",
+    "/append_all",
+    "/apply_users",
+    "/append_users",
+  ]);
 
   if (!allowed.has(command)) {
     return telegramFileHelpText();
   }
 
-  return await runTelegramCommand(commandLine + "\n" + fileText, env, origin, settings);
+  return await runTelegramCommand(
+    commandLine + "\n" + fileText,
+    env,
+    origin,
+    settings,
+  );
 }
 
 async function telegramDownloadDocumentText(botToken, document) {
@@ -1202,7 +1679,12 @@ async function telegramDownloadDocumentText(botToken, document) {
     throw error;
   }
 
-  const metaResponse = await fetch("https://api.telegram.org/bot" + botToken + "/getFile?file_id=" + encodeURIComponent(document.file_id));
+  const metaResponse = await fetch(
+    "https://api.telegram.org/bot" +
+      botToken +
+      "/getFile?file_id=" +
+      encodeURIComponent(document.file_id),
+  );
   const meta = await metaResponse.json().catch(() => null);
 
   if (!meta || !meta.ok || !meta.result || !meta.result.file_path) {
@@ -1211,7 +1693,12 @@ async function telegramDownloadDocumentText(botToken, document) {
     throw error;
   }
 
-  const fileResponse = await fetch("https://api.telegram.org/file/bot" + botToken + "/" + meta.result.file_path);
+  const fileResponse = await fetch(
+    "https://api.telegram.org/file/bot" +
+      botToken +
+      "/" +
+      meta.result.file_path,
+  );
   if (!fileResponse.ok) {
     const error = new Error("دانلود فایل از تلگرام ناموفق بود.");
     error.status = 502;
@@ -1229,20 +1716,37 @@ async function telegramDownloadDocumentText(botToken, document) {
 }
 
 async function handleTelegramCallback(callbackQuery, env, settings, origin) {
-  const fromId = String(callbackQuery.from && callbackQuery.from.id ? callbackQuery.from.id : "");
+  const fromId = String(
+    callbackQuery.from && callbackQuery.from.id ? callbackQuery.from.id : "",
+  );
 
   if (!constantTimeEqual(fromId, String(settings.adminChatId || ""))) {
-    await telegramAnswerCallback(settings.botToken, callbackQuery.id, "دسترسی مجاز نیست.");
+    await telegramAnswerCallback(
+      settings.botToken,
+      callbackQuery.id,
+      "دسترسی مجاز نیست.",
+    );
     return;
   }
 
-  const chatId = callbackQuery.message && callbackQuery.message.chat ? String(callbackQuery.message.chat.id) : fromId;
-  const messageId = callbackQuery.message ? callbackQuery.message.message_id : null;
+  const chatId =
+    callbackQuery.message && callbackQuery.message.chat
+      ? String(callbackQuery.message.chat.id)
+      : fromId;
+  const messageId = callbackQuery.message
+    ? callbackQuery.message.message_id
+    : null;
   const data = callbackQuery.data || "";
   const users = await getUsers(env);
 
-  const edit = async function(text, markup) {
-    return telegramEditCallbackMessage(callbackQuery, settings, chatId, text, markup);
+  const edit = async function (text, markup) {
+    return telegramEditCallbackMessage(
+      callbackQuery,
+      settings,
+      chatId,
+      text,
+      markup,
+    );
   };
 
   await telegramAnswerCallback(settings.botToken, callbackQuery.id, "");
@@ -1254,96 +1758,161 @@ async function handleTelegramCallback(callbackQuery, env, settings, origin) {
   }
 
   if (data === "tg:users") {
-    await edit(users.length ? "کاربر مورد نظر را انتخاب کنید:" : "هنوز کاربری ایجاد نشده است.", users.length ? telegramUsersKeyboard(users) : telegramInlineKeyboard(origin));
+    await edit(
+      users.length
+        ? "کاربر مورد نظر را انتخاب کنید:"
+        : "هنوز کاربری ایجاد نشده است.",
+      users.length
+        ? telegramUsersKeyboard(users)
+        : telegramInlineKeyboard(origin),
+    );
     return;
   }
 
   if (data.startsWith("tg:user:")) {
     const id = data.slice("tg:user:".length);
-    const user = users.find(item => item.id === id);
+    const user = users.find((item) => item.id === id);
     if (!user) return edit("کاربر پیدا نشد.", telegramUsersKeyboard(users));
-    await edit(telegramUserSummaryText(user), telegramUserActionsKeyboard(user, origin));
+    await edit(
+      telegramUserSummaryText(user),
+      telegramUserActionsKeyboard(user, origin),
+    );
     return;
   }
 
   if (data.startsWith("tg:user_links:")) {
     const id = data.slice("tg:user_links:".length);
-    const user = users.find(item => item.id === id);
+    const user = users.find((item) => item.id === id);
     if (!user) return edit("کاربر پیدا نشد.", telegramUsersKeyboard(users));
     const p = publicUser(user, new URL(origin), env);
-    await edit("لینک‌های کانفیگ " + escapeHtml(user.name) + "\n\nRaw:\n" + p.links.raw + "\n\nBase64:\n" + p.links.base64, telegramUserActionsKeyboard(user, origin));
+    await edit(
+      "لینک‌های کانفیگ " +
+        escapeHtml(user.name) +
+        "\n\nRaw:\n" +
+        p.links.raw +
+        "\n\nBase64:\n" +
+        p.links.base64,
+      telegramUserActionsKeyboard(user, origin),
+    );
     return;
   }
 
   if (data.startsWith("tg:user_summary:")) {
     const id = data.slice("tg:user_summary:".length);
-    const user = users.find(item => item.id === id);
+    const user = users.find((item) => item.id === id);
     if (!user) return edit("کاربر پیدا نشد.", telegramUsersKeyboard(users));
-    const configs = await env.CONFIGS_KV.get(configKey(user.id)) || "";
+    const configs = (await env.CONFIGS_KV.get(configKey(user.id))) || "";
     const stats = analyzeConfigs(configs);
-    await edit("خلاصه کانفیگ " + escapeHtml(user.name) + "\nتعداد: " + stats.total + "\nشناخته‌شده: " + stats.valid + "\nنامشخص: " + stats.unknown + "\nتکراری محتوایی: " + stats.duplicatesByContent, telegramUserActionsKeyboard(user, origin));
+    await edit(
+      "خلاصه کانفیگ " +
+        escapeHtml(user.name) +
+        "\nتعداد: " +
+        stats.total +
+        "\nشناخته‌شده: " +
+        stats.valid +
+        "\nنامشخص: " +
+        stats.unknown +
+        "\nتکراری محتوایی: " +
+        stats.duplicatesByContent,
+      telegramUserActionsKeyboard(user, origin),
+    );
     return;
   }
 
   if (data.startsWith("tg:user_set:") || data.startsWith("tg:user_append:")) {
     const isAppend = data.startsWith("tg:user_append:");
-    const id = data.slice(isAppend ? "tg:user_append:".length : "tg:user_set:".length);
-    const user = users.find(item => item.id === id);
+    const id = data.slice(
+      isAppend ? "tg:user_append:".length : "tg:user_set:".length,
+    );
+    const user = users.find((item) => item.id === id);
     if (!user) return edit("کاربر پیدا نشد.", telegramUsersKeyboard(users));
-    await setTelegramState(env, chatId, { action: isAppend ? "append_configs" : "set_configs", userId: user.id, messageId });
-    await edit((isAppend ? "کانفیگ‌هایی که باید اضافه شوند" : "کانفیگ‌های جایگزین") + " را برای " + escapeHtml(user.name) + " به صورت متن یا فایل ارسال کنید.\nبرای لغو، /cancel را بزنید.", telegramUserActionsKeyboard(user, origin));
+    await setTelegramState(env, chatId, {
+      action: isAppend ? "append_configs" : "set_configs",
+      userId: user.id,
+      messageId,
+    });
+    await edit(
+      (isAppend ? "کانفیگ‌هایی که باید اضافه شوند" : "کانفیگ‌های جایگزین") +
+        " را برای " +
+        escapeHtml(user.name) +
+        " به صورت متن یا فایل ارسال کنید.\nبرای لغو، /cancel را بزنید.",
+      telegramUserActionsKeyboard(user, origin),
+    );
     return;
   }
 
   if (data.startsWith("tg:user_rename:")) {
     const id = data.slice("tg:user_rename:".length);
-    const user = users.find(item => item.id === id);
+    const user = users.find((item) => item.id === id);
     if (!user) return edit("کاربر پیدا نشد.", telegramUsersKeyboard(users));
-    await setTelegramState(env, chatId, { action: "rename_user", userId: user.id, messageId });
-    await edit("نام جدید کاربر را ارسال کنید.\nبرای لغو، /cancel را بزنید.", telegramUserActionsKeyboard(user, origin));
+    await setTelegramState(env, chatId, {
+      action: "rename_user",
+      userId: user.id,
+      messageId,
+    });
+    await edit(
+      "نام جدید کاربر را ارسال کنید.\nبرای لغو، /cancel را بزنید.",
+      telegramUserActionsKeyboard(user, origin),
+    );
     return;
   }
 
   if (data.startsWith("tg:user_toggle:")) {
     const id = data.slice("tg:user_toggle:".length);
-    const user = users.find(item => item.id === id);
+    const user = users.find((item) => item.id === id);
     if (!user) return edit("کاربر پیدا نشد.", telegramUsersKeyboard(users));
     user.enabled = user.enabled === false;
     user.updatedAt = new Date().toISOString();
     await saveUsers(env, users);
-    await edit("وضعیت کاربر تغییر کرد: " + escapeHtml(user.name) + " - " + (user.enabled ? "فعال" : "غیرفعال"), telegramUserActionsKeyboard(user, origin));
+    await edit(
+      "وضعیت کاربر تغییر کرد: " +
+        escapeHtml(user.name) +
+        " - " +
+        (user.enabled ? "فعال" : "غیرفعال"),
+      telegramUserActionsKeyboard(user, origin),
+    );
     return;
   }
 
   if (data.startsWith("tg:user_regen_confirm:")) {
     const id = data.slice("tg:user_regen_confirm:".length);
-    await edit("توکن قبلی این کاربر از کار می‌افتد. تأیید می‌کنید؟", telegramConfirmKeyboard("tg:user_regen", id, "tg:user:" + id));
+    await edit(
+      "توکن قبلی این کاربر از کار می‌افتد. تأیید می‌کنید؟",
+      telegramConfirmKeyboard("tg:user_regen", id, "tg:user:" + id),
+    );
     return;
   }
 
   if (data.startsWith("tg:user_regen:")) {
     const id = data.slice("tg:user_regen:".length);
-    const user = users.find(item => item.id === id);
+    const user = users.find((item) => item.id === id);
     if (!user) return edit("کاربر پیدا نشد.", telegramUsersKeyboard(users));
     await env.CONFIGS_KV.delete(tokenKey(user.token));
     user.token = generateToken();
     user.updatedAt = new Date().toISOString();
     await env.CONFIGS_KV.put(tokenKey(user.token), user.id);
     await saveUsers(env, users);
-    await edit("توکن جدید ساخته شد.", telegramUserActionsKeyboard(user, origin));
+    await edit(
+      "توکن جدید ساخته شد.",
+      telegramUserActionsKeyboard(user, origin),
+    );
     return;
   }
 
   if (data.startsWith("tg:user_delete_confirm:")) {
     const id = data.slice("tg:user_delete_confirm:".length);
-    await edit("این کاربر و کانفیگ‌های او حذف شود؟", telegramConfirmKeyboard("tg:user_delete", id, "tg:user:" + id));
+    await edit(
+      "این کاربر و کانفیگ‌های او حذف شود؟",
+      telegramConfirmKeyboard("tg:user_delete", id, "tg:user:" + id),
+    );
     return;
   }
 
   if (data.startsWith("tg:user_delete:")) {
     const id = data.slice("tg:user_delete:".length);
-    const index = users.findIndex(item => item.id === id);
-    if (index === -1) return edit("کاربر پیدا نشد.", telegramUsersKeyboard(users));
+    const index = users.findIndex((item) => item.id === id);
+    if (index === -1)
+      return edit("کاربر پیدا نشد.", telegramUsersKeyboard(users));
     const [removed] = users.splice(index, 1);
     await saveUsers(env, users);
     await env.CONFIGS_KV.delete(tokenKey(removed.token));
@@ -1351,13 +1920,21 @@ async function handleTelegramCallback(callbackQuery, env, settings, origin) {
     await env.CONFIGS_KV.delete(backupConfigKey(removed.id));
     await env.CONFIGS_KV.delete(metaKey(removed.id));
     await env.CONFIGS_KV.delete(backupMetaKey(removed.id));
-    await edit("کاربر حذف شد: " + escapeHtml(removed.name), users.length ? telegramUsersKeyboard(users) : telegramInlineKeyboard(origin));
+    await edit(
+      "کاربر حذف شد: " + escapeHtml(removed.name),
+      users.length
+        ? telegramUsersKeyboard(users)
+        : telegramInlineKeyboard(origin),
+    );
     return;
   }
 
   if (data === "tg:create_user") {
     await setTelegramState(env, chatId, { action: "create_user", messageId });
-    await edit("نام کاربر جدید را ارسال کنید.\nبرای لغو، /cancel را بزنید.", telegramInlineKeyboard(origin));
+    await edit(
+      "نام کاربر جدید را ارسال کنید.\nبرای لغو، /cancel را بزنید.",
+      telegramInlineKeyboard(origin),
+    );
     return;
   }
 
@@ -1368,16 +1945,38 @@ async function handleTelegramCallback(callbackQuery, env, settings, origin) {
   }
 
   if (data.startsWith("tg:bulk_all:")) {
-    const mode = data.slice("tg:bulk_all:".length) === "append" ? "append" : "replace";
-    await setTelegramState(env, chatId, { action: "bulk_configs", mode, target: "all", userIds: [], messageId });
-    await edit((mode === "append" ? "کانفیگ‌هایی که باید به همه کاربران اضافه شوند" : "کانفیگ‌های جایگزین برای همه کاربران") + " را به صورت متن یا فایل ارسال کنید.\nبرای لغو، /cancel را بزنید.", telegramBulkModeKeyboard());
+    const mode =
+      data.slice("tg:bulk_all:".length) === "append" ? "append" : "replace";
+    await setTelegramState(env, chatId, {
+      action: "bulk_configs",
+      mode,
+      target: "all",
+      userIds: [],
+      messageId,
+    });
+    await edit(
+      (mode === "append"
+        ? "کانفیگ‌هایی که باید به همه کاربران اضافه شوند"
+        : "کانفیگ‌های جایگزین برای همه کاربران") +
+        " را به صورت متن یا فایل ارسال کنید.\nبرای لغو، /cancel را بزنید.",
+      telegramBulkModeKeyboard(),
+    );
     return;
   }
 
   if (data.startsWith("tg:bulk_select:")) {
-    const mode = data.slice("tg:bulk_select:".length) === "append" ? "append" : "replace";
-    await setTelegramState(env, chatId, { action: "bulk_select", mode, userIds: [], messageId });
-    await edit("کاربران مورد نظر را انتخاب کنید و سپس «ادامه و ارسال کانفیگ» را بزنید:", telegramBulkSelectKeyboard(users, []));
+    const mode =
+      data.slice("tg:bulk_select:".length) === "append" ? "append" : "replace";
+    await setTelegramState(env, chatId, {
+      action: "bulk_select",
+      mode,
+      userIds: [],
+      messageId,
+    });
+    await edit(
+      "کاربران مورد نظر را انتخاب کنید و سپس «ادامه و ارسال کانفیگ» را بزنید:",
+      telegramBulkSelectKeyboard(users, []),
+    );
     return;
   }
 
@@ -1385,33 +1984,68 @@ async function handleTelegramCallback(callbackQuery, env, settings, origin) {
     const id = data.slice("tg:bulk_toggle:".length);
     const state = await getTelegramState(env, chatId);
     if (!state || state.action !== "bulk_select") {
-      await setTelegramState(env, chatId, { action: "bulk_select", mode: "replace", userIds: [id], messageId });
-      await edit("کاربران انتخاب‌شده: 1", telegramBulkSelectKeyboard(users, [id]));
+      await setTelegramState(env, chatId, {
+        action: "bulk_select",
+        mode: "replace",
+        userIds: [id],
+        messageId,
+      });
+      await edit(
+        "کاربران انتخاب‌شده: 1",
+        telegramBulkSelectKeyboard(users, [id]),
+      );
       return;
     }
     const selected = new Set(state.userIds || []);
-    if (selected.has(id)) selected.delete(id); else selected.add(id);
+    if (selected.has(id)) selected.delete(id);
+    else selected.add(id);
     state.userIds = Array.from(selected);
     state.messageId = state.messageId || messageId;
     await setTelegramState(env, chatId, state);
-    await edit("کاربران انتخاب‌شده: " + (state.userIds.length || 0), telegramBulkSelectKeyboard(users, state.userIds));
+    await edit(
+      "کاربران انتخاب‌شده: " + (state.userIds.length || 0),
+      telegramBulkSelectKeyboard(users, state.userIds),
+    );
     return;
   }
 
   if (data === "tg:bulk_selected_continue") {
     const state = await getTelegramState(env, chatId);
-    if (!state || state.action !== "bulk_select" || !state.userIds || !state.userIds.length) {
-      await edit("حداقل یک کاربر را انتخاب کنید.", telegramBulkSelectKeyboard(users, []));
+    if (
+      !state ||
+      state.action !== "bulk_select" ||
+      !state.userIds ||
+      !state.userIds.length
+    ) {
+      await edit(
+        "حداقل یک کاربر را انتخاب کنید.",
+        telegramBulkSelectKeyboard(users, []),
+      );
       return;
     }
-    await setTelegramState(env, chatId, { action: "bulk_configs", mode: state.mode || "replace", target: "selected", userIds: state.userIds, messageId: state.messageId || messageId });
-    await edit("اکنون کانفیگ‌ها را به صورت متن یا فایل ارسال کنید.\nبرای لغو، /cancel را بزنید.", telegramBulkSelectKeyboard(users, state.userIds));
+    await setTelegramState(env, chatId, {
+      action: "bulk_configs",
+      mode: state.mode || "replace",
+      target: "selected",
+      userIds: state.userIds,
+      messageId: state.messageId || messageId,
+    });
+    await edit(
+      "اکنون کانفیگ‌ها را به صورت متن یا فایل ارسال کنید.\nبرای لغو، /cancel را بزنید.",
+      telegramBulkSelectKeyboard(users, state.userIds),
+    );
     return;
   }
 
   if (data === "tg:password") {
-    await setTelegramState(env, chatId, { action: "change_password", messageId });
-    await edit("رمز عبور جدید پنل را ارسال کنید. حداقل ۸ کاراکتر.\nبرای لغو، /cancel را بزنید.", telegramInlineKeyboard(origin));
+    await setTelegramState(env, chatId, {
+      action: "change_password",
+      messageId,
+    });
+    await edit(
+      "رمز عبور جدید پنل را ارسال کنید. حداقل ۸ کاراکتر.\nبرای لغو، /cancel را بزنید.",
+      telegramInlineKeyboard(origin),
+    );
     return;
   }
 
@@ -1440,21 +2074,23 @@ function normalizeTelegramText(text) {
     "➕ افزودن کاربر": "/newuser",
     "📦 اعمال گروهی": "/bulk",
     "🔐 تغییر رمز": "/password_change",
-    "❌ لغو": "/cancel"
+    "❌ لغو": "/cancel",
   };
 
   return map[text] || text;
 }
 
 function shouldShowTelegramInlineKeyboard(text) {
-  return text === "/start" ||
+  return (
+    text === "/start" ||
     text === "/help" ||
     text === "/commands" ||
     text === "/file" ||
     text === "/miniapp" ||
     text === "/newuser" ||
     text === "/bulk" ||
-    text === "/password_change";
+    text === "/password_change"
+  );
 }
 
 async function getTelegramState(env, chatId) {
@@ -1462,7 +2098,11 @@ async function getTelegramState(env, chatId) {
 }
 
 async function setTelegramState(env, chatId, state) {
-  await env.CONFIGS_KV.put(telegramStateKey(chatId), JSON.stringify({ ...state, updatedAt: new Date().toISOString() }), { expirationTtl: 3600 });
+  await env.CONFIGS_KV.put(
+    telegramStateKey(chatId),
+    JSON.stringify({ ...state, updatedAt: new Date().toISOString() }),
+    { expirationTtl: 3600 },
+  );
 }
 
 async function clearTelegramState(env, chatId) {
@@ -1473,7 +2113,15 @@ function telegramStateKey(chatId) {
   return TELEGRAM_STATE_PREFIX + chatId;
 }
 
-async function handleTelegramStateInput(inputText, state, chatId, env, settings, origin, fromFile = false) {
+async function handleTelegramStateInput(
+  inputText,
+  state,
+  chatId,
+  env,
+  settings,
+  origin,
+  fromFile = false,
+) {
   const text = String(inputText || "").trim();
   if (!text) return "متن دریافتی خالی است.";
 
@@ -1481,20 +2129,38 @@ async function handleTelegramStateInput(inputText, state, chatId, env, settings,
     const name = cleanName(text);
     if (!name) return "نام کاربر معتبر نیست.";
     const users = await getUsers(env);
-    const user = { id: generateId(), name, token: generateToken(), enabled: true, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), lastConfigUpdate: null };
+    const user = {
+      id: generateId(),
+      name,
+      token: generateToken(),
+      enabled: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      lastConfigUpdate: null,
+    };
     users.push(user);
     await saveUsers(env, users);
     await env.CONFIGS_KV.put(tokenKey(user.token), user.id);
     await env.CONFIGS_KV.put(configKey(user.id), "");
     await clearTelegramState(env, chatId);
     const p = publicUser(user, new URL(origin), env);
-    return "کاربر ایجاد شد.\nنام: " + escapeHtml(user.name) + "\nشناسه: " + user.id + "\nلینک Raw:\n" + p.links.raw;
+    return (
+      "کاربر ایجاد شد.\nنام: " +
+      escapeHtml(user.name) +
+      "\nشناسه: " +
+      user.id +
+      "\nلینک Raw:\n" +
+      p.links.raw
+    );
   }
 
   if (state.action === "rename_user") {
     const users = await getUsers(env);
-    const user = users.find(item => item.id === state.userId);
-    if (!user) { await clearTelegramState(env, chatId); return "کاربر پیدا نشد."; }
+    const user = users.find((item) => item.id === state.userId);
+    if (!user) {
+      await clearTelegramState(env, chatId);
+      return "کاربر پیدا نشد.";
+    }
     const name = cleanName(text);
     if (!name) return "نام جدید معتبر نیست.";
     user.name = name;
@@ -1507,46 +2173,91 @@ async function handleTelegramStateInput(inputText, state, chatId, env, settings,
   if (state.action === "change_password") {
     if (text.length < 8) return "رمز عبور جدید باید حداقل ۸ کاراکتر باشد.";
     await env.CONFIGS_KV.put(ADMIN_PASSWORD_HASH_KEY, await sha256Hex(text));
-    await env.CONFIGS_KV.put(ADMIN_PASSWORD_META_KEY, JSON.stringify({ updatedAt: new Date().toISOString(), source: "telegram-button" }));
+    await env.CONFIGS_KV.put(
+      ADMIN_PASSWORD_META_KEY,
+      JSON.stringify({
+        updatedAt: new Date().toISOString(),
+        source: "telegram-button",
+      }),
+    );
     await clearTelegramState(env, chatId);
     return "رمز عبور پنل تغییر کرد.";
   }
 
   if (state.action === "set_configs" || state.action === "append_configs") {
     const users = await getUsers(env);
-    const user = users.find(item => item.id === state.userId);
-    if (!user) { await clearTelegramState(env, chatId); return "کاربر پیدا نشد."; }
-    const current = await env.CONFIGS_KV.get(configKey(user.id)) || "";
-    const input = state.action === "append_configs" ? current + "\n" + text : text;
-    const saved = await saveConfigsForUser(env, user, input, { normalize: true, dedupe: true });
+    const user = users.find((item) => item.id === state.userId);
+    if (!user) {
+      await clearTelegramState(env, chatId);
+      return "کاربر پیدا نشد.";
+    }
+    const current = (await env.CONFIGS_KV.get(configKey(user.id))) || "";
+    const input =
+      state.action === "append_configs" ? current + "\n" + text : text;
+    const saved = await saveConfigsForUser(env, user, input, {
+      normalize: true,
+      dedupe: true,
+    });
     user.lastConfigUpdate = saved.meta.updatedAt;
     user.updatedAt = saved.meta.updatedAt;
     await saveUsers(env, users);
     await clearTelegramState(env, chatId);
-    return "کانفیگ‌های " + escapeHtml(user.name) + " ذخیره شد." + (fromFile ? "\nمنبع: فایل" : "") + "\nتعداد نهایی: " + saved.stats.total + "\nتکراری حذف‌شده: " + saved.stats.duplicatesByContent;
+    return (
+      "کانفیگ‌های " +
+      escapeHtml(user.name) +
+      " ذخیره شد." +
+      (fromFile ? "\nمنبع: فایل" : "") +
+      "\nتعداد نهایی: " +
+      saved.stats.total +
+      "\nتکراری حذف‌شده: " +
+      saved.stats.duplicatesByContent
+    );
   }
 
   if (state.action === "bulk_configs") {
     const users = await getUsers(env);
-    const selected = state.target === "all" ? users : users.filter(user => (state.userIds || []).includes(user.id));
-    if (!selected.length) { await clearTelegramState(env, chatId); return "کاربری برای اعمال انتخاب نشده است."; }
+    const selected =
+      state.target === "all"
+        ? users
+        : users.filter((user) => (state.userIds || []).includes(user.id));
+    if (!selected.length) {
+      await clearTelegramState(env, chatId);
+      return "کاربری برای اعمال انتخاب نشده است.";
+    }
     for (const user of selected) {
-      const current = await env.CONFIGS_KV.get(configKey(user.id)) || "";
+      const current = (await env.CONFIGS_KV.get(configKey(user.id))) || "";
       const input = state.mode === "append" ? current + "\n" + text : text;
-      const saved = await saveConfigsForUser(env, user, input, { normalize: true, dedupe: true });
+      const saved = await saveConfigsForUser(env, user, input, {
+        normalize: true,
+        dedupe: true,
+      });
       user.lastConfigUpdate = saved.meta.updatedAt;
       user.updatedAt = saved.meta.updatedAt;
     }
     await saveUsers(env, users);
     await clearTelegramState(env, chatId);
-    return "کانفیگ‌ها اعمال شد." + (fromFile ? "\nمنبع: فایل" : "") + "\nتعداد کاربران: " + selected.length;
+    return (
+      "کانفیگ‌ها اعمال شد." +
+      (fromFile ? "\nمنبع: فایل" : "") +
+      "\nتعداد کاربران: " +
+      selected.length
+    );
   }
 
   return "وضعیت عملیات مشخص نیست. /cancel را ارسال کنید.";
 }
 
 function telegramUserSummaryText(user) {
-  return "کاربر: " + escapeHtml(user.name) + "\nشناسه: " + user.id + "\nوضعیت: " + (user.enabled !== false ? "فعال" : "غیرفعال") + "\nآخرین تغییر: " + (user.updatedAt || "-");
+  return (
+    "کاربر: " +
+    escapeHtml(user.name) +
+    "\nشناسه: " +
+    user.id +
+    "\nوضعیت: " +
+    (user.enabled !== false ? "فعال" : "غیرفعال") +
+    "\nآخرین تغییر: " +
+    (user.updatedAt || "-")
+  );
 }
 
 async function runTelegramCommand(text, env, origin, settings) {
@@ -1561,8 +2272,12 @@ async function runTelegramCommand(text, env, origin, settings) {
   }
 
   if (command === "/id") {
-    return "شناسه عددی تلگرام ادمین ثبت‌شده: " + escapeHtml(settings.adminChatId || "ثبت نشده") + "\n\n" +
-      "توجه: USER_ID در دستورهای کانفیگ، شناسه داخلی کاربر پنل است، مثل u_xxxxx. آن را از /users یا دکمه «کاربران» بردارید.";
+    return (
+      "شناسه عددی تلگرام ادمین ثبت‌شده: " +
+      escapeHtml(settings.adminChatId || "ثبت نشده") +
+      "\n\n" +
+      "توجه: USER_ID در دستورهای کانفیگ، شناسه داخلی کاربر پنل است، مثل u_xxxxx. آن را از /users یا دکمه «کاربران» بردارید."
+    );
   }
 
   if (command === "/help") {
@@ -1583,7 +2298,9 @@ async function runTelegramCommand(text, env, origin, settings) {
   }
 
   if (command === "/newuser") {
-    await setTelegramState(env, settings.adminChatId, { action: "create_user" });
+    await setTelegramState(env, settings.adminChatId, {
+      action: "create_user",
+    });
     return "نام کاربر جدید را ارسال کنید.\nبرای لغو، /cancel را بزنید.";
   }
 
@@ -1592,7 +2309,9 @@ async function runTelegramCommand(text, env, origin, settings) {
   }
 
   if (command === "/password_change") {
-    await setTelegramState(env, settings.adminChatId, { action: "change_password" });
+    await setTelegramState(env, settings.adminChatId, {
+      action: "change_password",
+    });
     return "رمز عبور جدید پنل را ارسال کنید. حداقل ۸ کاراکتر.\nبرای لغو، /cancel را بزنید.";
   }
 
@@ -1607,14 +2326,23 @@ async function runTelegramCommand(text, env, origin, settings) {
   if (command === "/users") {
     const users = await getUsers(env);
     if (!users.length) return "هنوز کاربری ایجاد نشده است.";
-    return users.map(user => {
-      const p = publicUser(user, url, env);
-      return "شناسه: " + user.id +
-        "\nنام: " + escapeHtml(user.name) +
-        "\nوضعیت: " + (user.enabled !== false ? "فعال" : "غیرفعال") +
-        "\nلینک Raw: " + p.links.raw +
-        "\nلینک Base64: " + p.links.base64;
-    }).join("\n\n");
+    return users
+      .map((user) => {
+        const p = publicUser(user, url, env);
+        return (
+          "شناسه: " +
+          user.id +
+          "\nنام: " +
+          escapeHtml(user.name) +
+          "\nوضعیت: " +
+          (user.enabled !== false ? "فعال" : "غیرفعال") +
+          "\nلینک Raw: " +
+          p.links.raw +
+          "\nلینک Base64: " +
+          p.links.base64
+        );
+      })
+      .join("\n\n");
   }
 
   if (command === "/adduser") {
@@ -1628,23 +2356,28 @@ async function runTelegramCommand(text, env, origin, settings) {
       enabled: true,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      lastConfigUpdate: null
+      lastConfigUpdate: null,
     };
     users.push(user);
     await saveUsers(env, users);
     await env.CONFIGS_KV.put(tokenKey(user.token), user.id);
     await env.CONFIGS_KV.put(configKey(user.id), "");
     const p = publicUser(user, url, env);
-    return "کاربر ایجاد شد." +
-      "\nشناسه: " + user.id +
-      "\nنام: " + escapeHtml(user.name) +
-      "\nلینک Raw: " + p.links.raw;
+    return (
+      "کاربر ایجاد شد." +
+      "\nشناسه: " +
+      user.id +
+      "\nنام: " +
+      escapeHtml(user.name) +
+      "\nلینک Raw: " +
+      p.links.raw
+    );
   }
 
   if (command === "/deluser") {
     const id = args[1] || "";
     const users = await getUsers(env);
-    const index = users.findIndex(user => user.id === id);
+    const index = users.findIndex((user) => user.id === id);
     if (index === -1) return "کاربر پیدا نشد.";
     const [removed] = users.splice(index, 1);
     await saveUsers(env, users);
@@ -1659,88 +2392,141 @@ async function runTelegramCommand(text, env, origin, settings) {
   if (command === "/enable" || command === "/disable") {
     const id = args[1] || "";
     const users = await getUsers(env);
-    const user = users.find(item => item.id === id);
+    const user = users.find((item) => item.id === id);
     if (!user) return "کاربر پیدا نشد.";
     user.enabled = command === "/enable";
     user.updatedAt = new Date().toISOString();
     await saveUsers(env, users);
-    return "وضعیت کاربر تغییر کرد: " + escapeHtml(user.name) + " - " + (user.enabled ? "فعال" : "غیرفعال");
+    return (
+      "وضعیت کاربر تغییر کرد: " +
+      escapeHtml(user.name) +
+      " - " +
+      (user.enabled ? "فعال" : "غیرفعال")
+    );
   }
 
   if (command === "/configs") {
     const id = args[1] || "";
     const user = await getUserById(env, id);
     if (!user) return "کاربر پیدا نشد.";
-    const configs = await env.CONFIGS_KV.get(configKey(user.id)) || "";
+    const configs = (await env.CONFIGS_KV.get(configKey(user.id))) || "";
     const stats = analyzeConfigs(configs);
     const preview = configs.split("\n").filter(Boolean).slice(0, 8).join("\n");
-    return "کاربر: " + escapeHtml(user.name) +
-      "\nتعداد: " + stats.total +
-      "\nتکراری محتوایی: " + stats.duplicatesByContent +
-      "\n\n" + (preview ? escapeHtml(preview) : "کانفیگی ثبت نشده است.");
+    return (
+      "کاربر: " +
+      escapeHtml(user.name) +
+      "\nتعداد: " +
+      stats.total +
+      "\nتکراری محتوایی: " +
+      stats.duplicatesByContent +
+      "\n\n" +
+      (preview ? escapeHtml(preview) : "کانفیگی ثبت نشده است.")
+    );
   }
 
   if (command === "/setconfigs" || command === "/appendconfigs") {
     const id = args[1] || "";
     const users = await getUsers(env);
-    const user = users.find(item => item.id === id);
+    const user = users.find((item) => item.id === id);
     if (!user) return "کاربر پیدا نشد.";
-    if (!restText) return "کانفیگ‌ها را از خط بعدی پیام وارد کنید، یا یک فایل متنی با کپشن همین دستور ارسال کنید.";
-    const current = await env.CONFIGS_KV.get(configKey(user.id)) || "";
-    const input = command === "/appendconfigs" ? current + "\n" + restText : restText;
-    const saved = await saveConfigsForUser(env, user, input, { normalize: true, dedupe: true });
+    if (!restText)
+      return "کانفیگ‌ها را از خط بعدی پیام وارد کنید، یا یک فایل متنی با کپشن همین دستور ارسال کنید.";
+    const current = (await env.CONFIGS_KV.get(configKey(user.id))) || "";
+    const input =
+      command === "/appendconfigs" ? current + "\n" + restText : restText;
+    const saved = await saveConfigsForUser(env, user, input, {
+      normalize: true,
+      dedupe: true,
+    });
     user.lastConfigUpdate = saved.meta.updatedAt;
     user.updatedAt = saved.meta.updatedAt;
     await saveUsers(env, users);
-    return "کانفیگ‌های " + escapeHtml(user.name) + " ذخیره شد." +
-      "\nتعداد نهایی: " + saved.stats.total +
-      "\nتکراری حذف‌شده: " + saved.stats.duplicatesByContent;
+    return (
+      "کانفیگ‌های " +
+      escapeHtml(user.name) +
+      " ذخیره شد." +
+      "\nتعداد نهایی: " +
+      saved.stats.total +
+      "\nتکراری حذف‌شده: " +
+      saved.stats.duplicatesByContent
+    );
   }
 
   if (command === "/apply_all" || command === "/append_all") {
-    if (!restText) return "کانفیگ‌ها را از خط بعدی پیام وارد کنید، یا یک فایل متنی با کپشن همین دستور ارسال کنید.";
+    if (!restText)
+      return "کانفیگ‌ها را از خط بعدی پیام وارد کنید، یا یک فایل متنی با کپشن همین دستور ارسال کنید.";
     const users = await getUsers(env);
     if (!users.length) return "کاربری وجود ندارد.";
     for (const user of users) {
-      const current = await env.CONFIGS_KV.get(configKey(user.id)) || "";
-      const input = command === "/append_all" ? current + "\n" + restText : restText;
-      const saved = await saveConfigsForUser(env, user, input, { normalize: true, dedupe: true });
+      const current = (await env.CONFIGS_KV.get(configKey(user.id))) || "";
+      const input =
+        command === "/append_all" ? current + "\n" + restText : restText;
+      const saved = await saveConfigsForUser(env, user, input, {
+        normalize: true,
+        dedupe: true,
+      });
       user.lastConfigUpdate = saved.meta.updatedAt;
       user.updatedAt = saved.meta.updatedAt;
     }
     await saveUsers(env, users);
-    return "کانفیگ‌ها برای همه کاربران اعمال شد. تعداد کاربران: " + users.length;
+    return (
+      "کانفیگ‌ها برای همه کاربران اعمال شد. تعداد کاربران: " + users.length
+    );
   }
 
   if (command === "/apply_users" || command === "/append_users") {
-    const ids = String(args[1] || "").split(",").map(item => item.trim()).filter(Boolean);
-    if (!ids.length) return "فرمت صحیح:\n/apply_users id1,id2\nسپس کانفیگ‌ها از خط بعدی یا فایل با همین کپشن";
-    if (!restText) return "کانفیگ‌ها را از خط بعدی پیام وارد کنید، یا یک فایل متنی با کپشن همین دستور ارسال کنید.";
+    const ids = String(args[1] || "")
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+    if (!ids.length)
+      return "فرمت صحیح:\n/apply_users id1,id2\nسپس کانفیگ‌ها از خط بعدی یا فایل با همین کپشن";
+    if (!restText)
+      return "کانفیگ‌ها را از خط بعدی پیام وارد کنید، یا یک فایل متنی با کپشن همین دستور ارسال کنید.";
     const users = await getUsers(env);
-    const selected = users.filter(user => ids.includes(user.id));
+    const selected = users.filter((user) => ids.includes(user.id));
     if (!selected.length) return "هیچ کاربری با این شناسه‌ها پیدا نشد.";
     for (const user of selected) {
-      const current = await env.CONFIGS_KV.get(configKey(user.id)) || "";
-      const input = command === "/append_users" ? current + "\n" + restText : restText;
-      const saved = await saveConfigsForUser(env, user, input, { normalize: true, dedupe: true });
+      const current = (await env.CONFIGS_KV.get(configKey(user.id))) || "";
+      const input =
+        command === "/append_users" ? current + "\n" + restText : restText;
+      const saved = await saveConfigsForUser(env, user, input, {
+        normalize: true,
+        dedupe: true,
+      });
       user.lastConfigUpdate = saved.meta.updatedAt;
       user.updatedAt = saved.meta.updatedAt;
     }
     await saveUsers(env, users);
-    return "کانفیگ‌ها برای کاربران انتخاب‌شده اعمال شد. تعداد: " + selected.length;
+    return (
+      "کانفیگ‌ها برای کاربران انتخاب‌شده اعمال شد. تعداد: " + selected.length
+    );
   }
 
   if (command === "/password") {
     const newPassword = args.slice(1).join(" ");
-    if (newPassword.length < 8) return "رمز عبور جدید باید حداقل ۸ کاراکتر باشد.";
-    await env.CONFIGS_KV.put(ADMIN_PASSWORD_HASH_KEY, await sha256Hex(newPassword));
-    await env.CONFIGS_KV.put(ADMIN_PASSWORD_META_KEY, JSON.stringify({ updatedAt: new Date().toISOString(), source: "telegram" }));
+    if (newPassword.length < 8)
+      return "رمز عبور جدید باید حداقل ۸ کاراکتر باشد.";
+    await env.CONFIGS_KV.put(
+      ADMIN_PASSWORD_HASH_KEY,
+      await sha256Hex(newPassword),
+    );
+    await env.CONFIGS_KV.put(
+      ADMIN_PASSWORD_META_KEY,
+      JSON.stringify({
+        updatedAt: new Date().toISOString(),
+        source: "telegram",
+      }),
+    );
     return "رمز عبور پنل تغییر کرد.";
   }
 
   if (command === "/webhook") {
     const result = await configureTelegramEntryPoints(settings, origin);
-    return "وبهوک، منوی ربات، دکمه مینی‌اپ و لیست دستورها دوباره تنظیم شد.\n" + escapeHtml(JSON.stringify(result));
+    return (
+      "وبهوک، منوی ربات، دکمه مینی‌اپ و لیست دستورها دوباره تنظیم شد.\n" +
+      escapeHtml(JSON.stringify(result))
+    );
   }
 
   return "دستور شناخته نشد. برای راهنما /help را ارسال کنید.";
@@ -1751,7 +2537,8 @@ function telegramStartText() {
 }
 
 function telegramHelpText() {
-  return "راهنمای مدیریت ربات\n\n" +
+  return (
+    "راهنمای مدیریت ربات\n\n" +
     "📝 ارسال کانفیگ متنی:\n" +
     "/setconfigs USER_ID\n" +
     "vless://...\n" +
@@ -1759,11 +2546,13 @@ function telegramHelpText() {
     "📄 ارسال کانفیگ با فایل:\n" +
     "یک فایل txt/conf ارسال کنید و در Caption آن دستور مورد نظر را بنویسید. مثال:\n" +
     "/setconfigs USER_ID\n\n" +
-    "📋 برای دیدن لیست کامل دستورها، /commands را ارسال کنید.";
+    "📋 برای دیدن لیست کامل دستورها، /commands را ارسال کنید."
+  );
 }
 
 function telegramCommandsText() {
-  return "لیست دستورهای ربات\n\n" +
+  return (
+    "لیست دستورهای ربات\n\n" +
     "/start - نمایش منوی اصلی\n" +
     "/help - راهنمای کامل استفاده\n" +
     "/commands - توضیح دستورها\n" +
@@ -1779,11 +2568,13 @@ function telegramCommandsText() {
     "/apply_users id1,id2 - جایگزینی برای چند کاربر\n" +
     "/append_users id1,id2 - افزودن برای چند کاربر\n" +
     "/password NEW_PASSWORD - تغییر رمز پنل\n" +
-    "/webhook - تنظیم مجدد وبهوک، منو و کامندها";
+    "/webhook - تنظیم مجدد وبهوک، منو و کامندها"
+  );
 }
 
 function telegramFileHelpText() {
-  return "راهنمای ارسال فایل کانفیگ\n\n" +
+  return (
+    "راهنمای ارسال فایل کانفیگ\n\n" +
     "۱. یک فایل متنی با پسوند txt یا conf آماده کنید.\n" +
     "۲. فایل را برای ربات ارسال کنید.\n" +
     "۳. در قسمت Caption فایل، یکی از دستورهای زیر را بنویسید:\n\n" +
@@ -1797,42 +2588,74 @@ function telegramFileHelpText() {
     "/append_all\n\n" +
     "برای چند کاربر مشخص:\n" +
     "/apply_users id1,id2\n\n" +
-    "بعد از دریافت فایل، کانفیگ‌های تکراری حتی با نام متفاوت حذف می‌شوند.";
+    "بعد از دریافت فایل، کانفیگ‌های تکراری حتی با نام متفاوت حذف می‌شوند."
+  );
 }
 
-function configKey(userId) { return "user_configs:" + userId; }
-function backupConfigKey(userId) { return "user_configs_backup:" + userId; }
-function metaKey(userId) { return "user_configs_meta:" + userId; }
-function backupMetaKey(userId) { return "user_configs_backup_meta:" + userId; }
-function tokenKey(token) { return "user_token:" + token; }
+function configKey(userId) {
+  return "user_configs:" + userId;
+}
+function backupConfigKey(userId) {
+  return "user_configs_backup:" + userId;
+}
+function metaKey(userId) {
+  return "user_configs_meta:" + userId;
+}
+function backupMetaKey(userId) {
+  return "user_configs_backup_meta:" + userId;
+}
+function tokenKey(token) {
+  return "user_token:" + token;
+}
 
 async function getJson(env, key, fallback) {
   const raw = await env.CONFIGS_KV.get(key);
   if (!raw) return fallback;
-  try { return JSON.parse(raw); } catch { return fallback; }
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return fallback;
+  }
 }
 
 function arrayOfStrings(value) {
-  return Array.isArray(value) ? value.map(item => String(item)).filter(Boolean) : [];
+  return Array.isArray(value)
+    ? value.map((item) => String(item)).filter(Boolean)
+    : [];
 }
 
 function cleanName(value) {
-  return String(value || "").trim().replace(/\s+/g, " ").slice(0, 80);
+  return String(value || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .slice(0, 80);
 }
 
 function safeFilename(value) {
-  return String(value || "user").replace(/[^a-zA-Z0-9-_\u0600-\u06FF]+/g, "-").slice(0, 80) || "user";
+  return (
+    String(value || "user")
+      .replace(/[^a-zA-Z0-9-_\u0600-\u06FF]+/g, "-")
+      .slice(0, 80) || "user"
+  );
 }
 
 function generateId() {
-  return "u_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 8);
+  return (
+    "u_" +
+    Date.now().toString(36) +
+    "_" +
+    Math.random().toString(36).slice(2, 8)
+  );
 }
 
 function generateToken(length = 56) {
-  const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  const chars =
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
   const bytes = new Uint8Array(length);
   crypto.getRandomValues(bytes);
-  return Array.from(bytes).map(byte => chars[byte % chars.length]).join("");
+  return Array.from(bytes)
+    .map((byte) => chars[byte % chars.length])
+    .join("");
 }
 
 function constantTimeEqual(a, b) {
@@ -1849,7 +2672,9 @@ function constantTimeEqual(a, b) {
 async function sha256Hex(text) {
   const bytes = new TextEncoder().encode(String(text));
   const hash = await crypto.subtle.digest("SHA-256", bytes);
-  return Array.from(new Uint8Array(hash)).map(byte => byte.toString(16).padStart(2, "0")).join("");
+  return Array.from(new Uint8Array(hash))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 function utf8ToBase64(text) {
@@ -1864,7 +2689,9 @@ function utf8ToBase64(text) {
 
 function safeBase64Decode(input) {
   try {
-    let value = String(input || "").replace(/-/g, "+").replace(/_/g, "/");
+    let value = String(input || "")
+      .replace(/-/g, "+")
+      .replace(/_/g, "/");
     while (value.length % 4) value += "=";
     const binary = atob(value);
     const bytes = new Uint8Array(binary.length);
@@ -1878,7 +2705,14 @@ function safeBase64Decode(input) {
 function stableJson(value) {
   if (Array.isArray(value)) return "[" + value.map(stableJson).join(",") + "]";
   if (value && typeof value === "object") {
-    return "{" + Object.keys(value).sort().map(key => JSON.stringify(key) + ":" + stableJson(value[key])).join(",") + "}";
+    return (
+      "{" +
+      Object.keys(value)
+        .sort()
+        .map((key) => JSON.stringify(key) + ":" + stableJson(value[key]))
+        .join(",") +
+      "}"
+    );
   }
   return JSON.stringify(value);
 }
@@ -1894,7 +2728,13 @@ function maskToken(token) {
 }
 
 function escapeHtml(value) {
-  return String(value || "").replace(/[&<>'"]/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[char]));
+  return String(value || "").replace(
+    /[&<>'"]/g,
+    (char) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[
+        char
+      ],
+  );
 }
 
 function jsonResponse(data, status = 200) {
@@ -1903,8 +2743,8 @@ function jsonResponse(data, status = 200) {
     headers: {
       ...securityHeaders(),
       "content-type": "application/json; charset=utf-8",
-      "cache-control": "no-store"
-    }
+      "cache-control": "no-store",
+    },
   });
 }
 
@@ -1914,8 +2754,8 @@ function htmlResponse(html) {
     headers: {
       ...securityHeaders(),
       "content-type": "text/html; charset=utf-8",
-      "cache-control": "no-store"
-    }
+      "cache-control": "no-store",
+    },
   });
 }
 
@@ -1924,7 +2764,7 @@ function securityHeaders() {
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY",
     "referrer-policy": "no-referrer",
-    "permissions-policy": "camera=(), microphone=(), geolocation=()"
+    "permissions-policy": "camera=(), microphone=(), geolocation=()",
   };
 }
 
@@ -2435,7 +3275,13 @@ const ADMIN_HTML = `<!doctype html>
 
             <div id="bulkPanel" class="panel">
               <div class="card">
-                <div class="card-title"><h2>اعمال گروهی کانفیگ</h2></div>
+                <div class="card-title">
+                  <h2>اعمال گروهی کانفیگ</h2>
+                  <div class="toolbar">
+                    <button id="bulkFileBtn" class="btn">آپلود فایل</button>
+                    <button id="bulkCleanBtn" class="btn">پاک‌سازی</button>
+                  </div>
+                </div>
                 <p class="muted">در این بخش می‌توانید یک مجموعه کانفیگ را برای همه کاربران یا فقط کاربران انتخاب‌شده اعمال کنید.</p>
                 <div class="grid2">
                   <div class="field">
@@ -2454,6 +3300,8 @@ const ADMIN_HTML = `<!doctype html>
                   </div>
                 </div>
                 <div id="bulkUsersBox" class="checks"></div>
+                <input id="bulkFileInput" class="hidden" type="file" accept=".txt,.conf,.json,.yaml,.yml,text/plain" />
+                <div id="bulkDropArea" class="drop">فایل را اینجا بکشید و رها کنید، یا روی «آپلود فایل» بزنید. متن فایل داخل باکس زیر نمایش داده می‌شود.</div>
                 <textarea id="bulkConfigsText" class="textarea small" spellcheck="false"></textarea>
                 <button id="applyBulkBtn" class="btn success full">اعمال کانفیگ‌ها</button>
               </div>
@@ -2880,6 +3728,21 @@ vless://...</p>
     ["dragleave", "drop"].forEach(function(name) { dropArea.addEventListener(name, function(e) { e.preventDefault(); dropArea.classList.remove("drag"); }); });
     dropArea.addEventListener("drop", async function(e) { var file = e.dataTransfer.files && e.dataTransfer.files[0]; if (file) await readFileIntoTextarea(file, $("configsText")); });
     dropArea.addEventListener("click", function() { $("fileInput").click(); });
+
+    $("bulkFileBtn").addEventListener("click", function() { $("bulkFileInput").click(); });
+    $("bulkFileInput").addEventListener("change", async function(e) {
+      var file = e.target.files && e.target.files[0];
+      if (file) await readFileIntoTextarea(file, $("bulkConfigsText"));
+      e.target.value = "";
+    });
+
+    $("bulkCleanBtn").addEventListener("click", function() { $("bulkConfigsText").value = normalizeText($("bulkConfigsText").value, true); toast("متن پاک‌سازی شد."); });
+
+    var bulkDropArea = $("bulkDropArea");
+    ["dragenter", "dragover"].forEach(function(name) { bulkDropArea.addEventListener(name, function(e) { e.preventDefault(); bulkDropArea.classList.add("drag"); }); });
+    ["dragleave", "drop"].forEach(function(name) { bulkDropArea.addEventListener(name, function(e) { e.preventDefault(); bulkDropArea.classList.remove("drag"); }); });
+    bulkDropArea.addEventListener("drop", async function(e) { var file = e.dataTransfer.files && e.dataTransfer.files[0]; if (file) await readFileIntoTextarea(file, $("bulkConfigsText")); });
+    bulkDropArea.addEventListener("click", function() { $("bulkFileInput").click(); });
 
     $("applyBulkBtn").addEventListener("click", async function() {
       try {
