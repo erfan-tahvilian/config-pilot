@@ -1252,7 +1252,7 @@ function telegramReplyKeyboard(origin) {
       [{ text: "❓ راهنما" }, { text: "❌ لغو" }],
     ],
     resize_keyboard: true,
-    is_persistent: true,
+    is_persistent: false,
   };
 }
 
@@ -2775,6 +2775,7 @@ const ADMIN_HTML = `<!doctype html>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>پنل مدیریت کانفیگ‌ها</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/lucide@latest/dist/umd/lucide.min.js"></script>
   <style>
     :root {
       --bg: #070a12;
@@ -3141,6 +3142,11 @@ const ADMIN_HTML = `<!doctype html>
 
     @keyframes slide { from { transform: translateY(14px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 
+    svg.lucide { flex-shrink: 0; width: 15px; height: 15px; }
+    .tab svg.lucide { width: 17px; height: 17px; }
+    .logo svg.lucide { width: 28px; height: 28px; color: #fff; }
+    .btn.full svg.lucide { width: 16px; height: 16px; }
+
     @media (max-width: 1050px) {
       .layout, .grid2, .grid3 { grid-template-columns: 1fr; }
       .stats { grid-template-columns: repeat(2, 1fr); }
@@ -3154,7 +3160,7 @@ const ADMIN_HTML = `<!doctype html>
     <section id="loginView" class="login-wrap">
       <div class="shell login-card">
         <div class="brand">
-          <div class="logo">SUB</div>
+          <div class="logo"><i data-lucide="shield-check"></i></div>
           <div><h1>پنل مدیریت کانفیگ‌ها</h1></div>
         </div>
         <form id="loginForm">
@@ -3162,7 +3168,7 @@ const ADMIN_HTML = `<!doctype html>
             <label class="label" for="passwordInput">رمز عبور</label>
             <input id="passwordInput" class="input rtl" type="password" autocomplete="current-password" placeholder="رمز عبور" />
           </div>
-          <button class="btn primary full" type="submit">ورود به پنل</button>
+          <button class="btn primary full" type="submit"><i data-lucide="log-in"></i> ورود به پنل</button>
         </form>
       </div>
     </section>
@@ -3170,15 +3176,15 @@ const ADMIN_HTML = `<!doctype html>
     <section id="dashboardView" class="hidden">
       <div class="topbar">
         <div class="brand">
-          <div class="logo">SUB</div>
+          <div class="logo"><i data-lucide="shield-check"></i></div>
           <div>
             <h1>مدیریت پیشرفته کانفیگ‌ها</h1>
             <p class="subtitle">کاربر ایجاد کنید، کانفیگ اختصاصی بدهید، تنظیمات گروهی اعمال کنید و ربات تلگرام را متصل کنید.</p>
           </div>
         </div>
         <div class="toolbar">
-          <button id="refreshBtn" class="btn">بارگذاری مجدد</button>
-          <button id="logoutBtn" class="btn ghost">خروج</button>
+          <button id="refreshBtn" class="btn"><i data-lucide="refresh-cw"></i> بارگذاری مجدد</button>
+          <button id="logoutBtn" class="btn ghost"><i data-lucide="log-out"></i> خروج</button>
         </div>
       </div>
 
@@ -3187,11 +3193,11 @@ const ADMIN_HTML = `<!doctype html>
           <aside class="card">
             <div class="card-title"><h2>بخش‌ها</h2></div>
             <div class="tabs">
-              <button class="tab active" data-tab="usersPanel">کاربران</button>
-              <button class="tab" data-tab="configsPanel">کانفیگ اختصاصی کاربر</button>
-              <button class="tab" data-tab="bulkPanel">اعمال گروهی کانفیگ</button>
-              <button class="tab" data-tab="securityPanel">امنیت و رمز عبور</button>
-              <button class="tab" data-tab="telegramPanel">ربات تلگرام</button>
+              <button class="tab active" data-tab="usersPanel"><i data-lucide="users"></i> کاربران</button>
+              <button class="tab" data-tab="configsPanel"><i data-lucide="file-cog"></i> کانفیگ اختصاصی کاربر</button>
+              <button class="tab" data-tab="bulkPanel"><i data-lucide="layers"></i> اعمال گروهی کانفیگ</button>
+              <button class="tab" data-tab="securityPanel"><i data-lucide="shield"></i> امنیت و رمز عبور</button>
+              <button class="tab" data-tab="telegramPanel"><i data-lucide="bot"></i> ربات تلگرام</button>
             </div>
           </aside>
 
@@ -3204,7 +3210,7 @@ const ADMIN_HTML = `<!doctype html>
                     <label class="label">نام کاربر</label>
                     <input id="newUserName" class="input rtl" placeholder="مثلاً موبایل، لپ‌تاپ، کاربر ۱" />
                   </div>
-                  <button id="createUserBtn" class="btn primary full">ایجاد کاربر</button>
+                  <button id="createUserBtn" class="btn primary full"><i data-lucide="user-plus"></i> ایجاد کاربر</button>
                 </div>
                 <div class="card">
                   <div class="card-title"><h2>کاربران</h2></div>
@@ -3218,11 +3224,11 @@ const ADMIN_HTML = `<!doctype html>
                 <div class="card-title">
                   <h2>کانفیگ اختصاصی کاربر</h2>
                   <div class="toolbar">
-                    <button id="fileBtn" class="btn">آپلود فایل</button>
-                    <button id="cleanBtn" class="btn">پاک‌سازی</button>
-                    <button id="downloadBtn" class="btn">دانلود TXT</button>
-                    <button id="restoreBtn" class="btn danger">بازیابی بکاپ</button>
-                    <button id="saveConfigsBtn" class="btn success">ذخیره کانفیگ‌ها</button>
+                    <button id="fileBtn" class="btn"><i data-lucide="upload"></i> آپلود فایل</button>
+                    <button id="cleanBtn" class="btn"><i data-lucide="sparkles"></i> پاک‌سازی</button>
+                    <button id="downloadBtn" class="btn"><i data-lucide="download"></i> دانلود TXT</button>
+                    <button id="restoreBtn" class="btn danger"><i data-lucide="history"></i> بازیابی بکاپ</button>
+                    <button id="saveConfigsBtn" class="btn success"><i data-lucide="save"></i> ذخیره کانفیگ‌ها</button>
                   </div>
                 </div>
 
@@ -3240,18 +3246,18 @@ const ADMIN_HTML = `<!doctype html>
                       <label><input id="editUserEnabled" type="checkbox" checked /> کاربر فعال باشد</label>
                     </div>
                     <div class="toolbar">
-                      <button id="updateUserBtn" class="btn">ذخیره مشخصات</button>
-                      <button id="regenTokenBtn" class="btn danger">ساخت توکن جدید</button>
-                      <button id="deleteUserBtn" class="btn danger">حذف کاربر</button>
+                      <button id="updateUserBtn" class="btn"><i data-lucide="check-circle"></i> ذخیره مشخصات</button>
+                      <button id="regenTokenBtn" class="btn danger"><i data-lucide="key-round"></i> ساخت توکن جدید</button>
+                      <button id="deleteUserBtn" class="btn danger"><i data-lucide="trash-2"></i> حذف کاربر</button>
                     </div>
                   </div>
                   <div>
                     <div class="label">لینک Raw</div>
-                    <div class="linkrow"><div id="rawLink" class="code">-</div><button id="copyRawBtn" class="btn small">کپی</button></div>
+                    <div class="linkrow"><div id="rawLink" class="code">-</div><button id="copyRawBtn" class="btn small"><i data-lucide="copy"></i> کپی</button></div>
                     <div style="height:8px"></div>
                     <div class="label">لینک Base64</div>
-                    <div class="linkrow"><div id="base64Link" class="code">-</div><button id="copyBase64Btn" class="btn small">کپی</button></div>
-                    <button id="openRawBtn" class="btn full">تست لینک Raw</button>
+                    <div class="linkrow"><div id="base64Link" class="code">-</div><button id="copyBase64Btn" class="btn small"><i data-lucide="copy"></i> کپی</button></div>
+                    <button id="openRawBtn" class="btn full"><i data-lucide="external-link"></i> تست لینک Raw</button>
                   </div>
                 </div>
 
@@ -3278,8 +3284,8 @@ const ADMIN_HTML = `<!doctype html>
                 <div class="card-title">
                   <h2>اعمال گروهی کانفیگ</h2>
                   <div class="toolbar">
-                    <button id="bulkFileBtn" class="btn">آپلود فایل</button>
-                    <button id="bulkCleanBtn" class="btn">پاک‌سازی</button>
+                    <button id="bulkFileBtn" class="btn"><i data-lucide="upload"></i> آپلود فایل</button>
+                    <button id="bulkCleanBtn" class="btn"><i data-lucide="sparkles"></i> پاک‌سازی</button>
                   </div>
                 </div>
                 <p class="muted">در این بخش می‌توانید یک مجموعه کانفیگ را برای همه کاربران یا فقط کاربران انتخاب‌شده اعمال کنید.</p>
@@ -3303,7 +3309,7 @@ const ADMIN_HTML = `<!doctype html>
                 <input id="bulkFileInput" class="hidden" type="file" accept=".txt,.conf,.json,.yaml,.yml,text/plain" />
                 <div id="bulkDropArea" class="drop">فایل را اینجا بکشید و رها کنید، یا روی «آپلود فایل» بزنید. متن فایل داخل باکس زیر نمایش داده می‌شود.</div>
                 <textarea id="bulkConfigsText" class="textarea small" spellcheck="false"></textarea>
-                <button id="applyBulkBtn" class="btn success full">اعمال کانفیگ‌ها</button>
+                <button id="applyBulkBtn" class="btn success full"><i data-lucide="check-circle"></i> اعمال کانفیگ‌ها</button>
               </div>
             </div>
 
@@ -3320,7 +3326,7 @@ const ADMIN_HTML = `<!doctype html>
                     <input id="newPassword" class="input rtl" type="password" />
                   </div>
                 </div>
-                <button id="changePasswordBtn" class="btn primary full">تغییر رمز عبور</button>
+                <button id="changePasswordBtn" class="btn primary full"><i data-lucide="lock"></i> تغییر رمز عبور</button>
                 <p id="passwordMode" class="muted" style="margin-top:14px"></p>
               </div>
             </div>
@@ -3341,8 +3347,8 @@ const ADMIN_HTML = `<!doctype html>
                 </div>
                 <div class="checks"><label><input id="telegramEnabled" type="checkbox" /> ربات فعال باشد</label></div>
                 <div class="toolbar">
-                  <button id="saveTelegramBtn" class="btn primary">ذخیره و فعال‌سازی وبهوک</button>
-                  <button id="testTelegramBtn" class="btn">ارسال پیام تست</button>
+                  <button id="saveTelegramBtn" class="btn primary"><i data-lucide="zap"></i> ذخیره و فعال‌سازی وبهوک</button>
+                  <button id="testTelegramBtn" class="btn"><i data-lucide="send"></i> ارسال پیام تست</button>
                 </div>
                 <div style="height:14px"></div>
                 <div class="label">آدرس وبهوک</div>
@@ -3351,7 +3357,7 @@ const ADMIN_HTML = `<!doctype html>
                 <div class="label">آدرس مینی‌اپ</div>
                 <div class="linkrow">
                   <div id="telegramMiniApp" class="code">-</div>
-                  <button id="copyMiniAppBtn" class="btn small">کپی</button>
+                  <button id="copyMiniAppBtn" class="btn small"><i data-lucide="copy"></i> کپی</button>
                 </div>
                 <div style="height:14px"></div>
                 <div class="card" style="background:rgba(3,8,20,.32)">
@@ -3838,6 +3844,8 @@ vless://...</p>
       if (!saved) return showLogin();
       try { showDashboard(); await refreshState(); } catch (e) { clearPassword(); showLogin(); }
     })();
+
+    if (typeof lucide !== "undefined") lucide.createIcons();
   </script>
 </body>
 </html>`;
