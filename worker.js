@@ -391,10 +391,28 @@ export default {
         }
 
         let inputConfigs = String(payload.configs || "");
+
+        if (payload.sourceUserId) {
+          const sourceUser = users.find((u) => u.id === payload.sourceUserId);
+          if (!sourceUser) {
+            return jsonResponse(
+              { ok: false, error: "کاربر منبع یافت نشد." },
+              400,
+            );
+          }
+          inputConfigs =
+            (await env.CONFIGS_KV.get(configKey(sourceUser.id))) || "";
+        }
+
         inputConfigs = normalizeAndDedupeConfigs(inputConfigs).text;
         if (!inputConfigs.trim()) {
           return jsonResponse(
-            { ok: false, error: "کانفیگ قابل اعمال وارد نشده است." },
+            {
+              ok: false,
+              error: payload.sourceUserId
+                ? "کاربر منبع فاقد کانفیگ است."
+                : "کانفیگ قابل اعمال وارد نشده است.",
+            },
             400,
           );
         }
@@ -3283,12 +3301,12 @@ const ADMIN_HTML = `<!doctype html>
               <div class="card">
                 <div class="card-title">
                   <h2>اعمال گروهی کانفیگ</h2>
-                  <div class="toolbar">
+                  <div class="toolbar" id="bulkTextToolbar">
                     <button id="bulkFileBtn" class="btn"><i data-lucide="upload"></i> آپلود فایل</button>
                     <button id="bulkCleanBtn" class="btn"><i data-lucide="sparkles"></i> پاک‌سازی</button>
                   </div>
                 </div>
-                <p class="muted">در این بخش می‌توانید یک مجموعه کانفیگ را برای همه کاربران یا فقط کاربران انتخاب‌شده اعمال کنید.</p>
+                <p class="muted">در این بخش می‌توانید یک مجموعه کانفیگ را برای همه کاربران یا فقط کاربران انتخاب‌شده اعمال کنید. منبع کانفیگ می‌تواند متن، فایل یا کانفیگ‌های یک کاربر دیگر باشد.</p>
                 <div class="grid2">
                   <div class="field">
                     <label class="label">نوع اعمال</label>
@@ -3306,9 +3324,24 @@ const ADMIN_HTML = `<!doctype html>
                   </div>
                 </div>
                 <div id="bulkUsersBox" class="checks"></div>
-                <input id="bulkFileInput" class="hidden" type="file" accept=".txt,.conf,.json,.yaml,.yml,text/plain" />
-                <div id="bulkDropArea" class="drop">فایل را اینجا بکشید و رها کنید، یا روی «آپلود فایل» بزنید. متن فایل داخل باکس زیر نمایش داده می‌شود.</div>
-                <textarea id="bulkConfigsText" class="textarea small" spellcheck="false"></textarea>
+                <div class="grid2" style="margin-top:4px;margin-bottom:12px">
+                  <div class="field">
+                    <label class="label">منبع کانفیگ</label>
+                    <select id="bulkSourceType" class="select">
+                      <option value="text">متن / فایل</option>
+                      <option value="user">از کانفیگ‌های کاربر دیگر</option>
+                    </select>
+                  </div>
+                  <div class="field" id="bulkSourceUserField" style="display:none">
+                    <label class="label">کاربر منبع</label>
+                    <select id="bulkSourceUser" class="select"></select>
+                  </div>
+                </div>
+                <div id="bulkTextInputBox">
+                  <input id="bulkFileInput" class="hidden" type="file" accept=".txt,.conf,.json,.yaml,.yml,text/plain" />
+                  <div id="bulkDropArea" class="drop">فایل را اینجا بکشید و رها کنید، یا روی «آپلود فایل» بزنید. متن فایل داخل باکس زیر نمایش داده می‌شود.</div>
+                  <textarea id="bulkConfigsText" class="textarea small" spellcheck="false"></textarea>
+                </div>
                 <button id="applyBulkBtn" class="btn success full"><i data-lucide="check-circle"></i> اعمال کانفیگ‌ها</button>
               </div>
             </div>
@@ -3516,10 +3549,16 @@ vless://...</p>
     function renderBulkUsers() {
       var box = $("bulkUsersBox");
       box.innerHTML = "";
+      var sourceSelect = $("bulkSourceUser");
+      sourceSelect.innerHTML = "";
       users.forEach(function(user) {
         var label = document.createElement("label");
         label.innerHTML = '<input type="checkbox" class="bulk-user" value="' + user.id + '" /> ' + escapeHtml(user.name);
         box.appendChild(label);
+        var opt = document.createElement("option");
+        opt.value = user.id;
+        opt.textContent = user.name;
+        sourceSelect.appendChild(opt);
       });
     }
 
@@ -3735,6 +3774,13 @@ vless://...</p>
     dropArea.addEventListener("drop", async function(e) { var file = e.dataTransfer.files && e.dataTransfer.files[0]; if (file) await readFileIntoTextarea(file, $("configsText")); });
     dropArea.addEventListener("click", function() { $("fileInput").click(); });
 
+    $("bulkSourceType").addEventListener("change", function() {
+      var isUser = this.value === "user";
+      $("bulkSourceUserField").style.display = isUser ? "" : "none";
+      $("bulkTextInputBox").style.display = isUser ? "none" : "";
+      $("bulkTextToolbar").style.display = isUser ? "none" : "";
+    });
+
     $("bulkFileBtn").addEventListener("click", function() { $("bulkFileInput").click(); });
     $("bulkFileInput").addEventListener("change", async function(e) {
       var file = e.target.files && e.target.files[0];
@@ -3753,7 +3799,14 @@ vless://...</p>
     $("applyBulkBtn").addEventListener("click", async function() {
       try {
         var checked = Array.from(document.querySelectorAll(".bulk-user:checked")).map(function(x) { return x.value; });
-        var data = await api("/api/admin/bulk/apply", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ target: $("bulkTarget").value, userIds: checked, mode: $("bulkMode").value, configs: $("bulkConfigsText").value }) });
+        var isUserSource = $("bulkSourceType").value === "user";
+        var body = { target: $("bulkTarget").value, userIds: checked, mode: $("bulkMode").value };
+        if (isUserSource) {
+          body.sourceUserId = $("bulkSourceUser").value;
+        } else {
+          body.configs = $("bulkConfigsText").value;
+        }
+        var data = await api("/api/admin/bulk/apply", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
         await refreshState();
         toast(data.message);
       } catch (err) { toast(err.message, "err"); }
