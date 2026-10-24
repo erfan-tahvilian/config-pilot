@@ -9,7 +9,7 @@
     <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-22A06B" alt="MIT license" /></a>
     <a href="https://github.com/erfan-tahvilian/config-pilot/actions/workflows/ci.yml"><img src="https://github.com/erfan-tahvilian/config-pilot/actions/workflows/ci.yml/badge.svg" alt="Tests and Worker build" /></a>
   </p>
-  <p><a href="README.md">English</a> · <a href="README.fa.md">فارسی</a> · <a href="#deploy">Deploy</a> · <a href="#auto-deploy">Automatic deployment</a> · <a href="https://github.com/erfan-tahvilian/config-pilot/issues">Report an issue</a></p>
+  <p><a href="README.md">English</a> · <a href="README.fa.md">فارسی</a> · <a href="#deploy">🚀 Deploy</a> · <a href="#auto-deploy">🔄 Automatic deployment</a> · <a href="https://github.com/erfan-tahvilian/config-pilot/issues">🐛 Report an issue</a></p>
 </div>
 
 ---
@@ -18,12 +18,12 @@ A self-hosted subscription-config manager for Cloudflare Workers and KV, with a 
 
 > Config Pilot stores and distributes configuration text. It does not provision VPN servers, generate working proxy credentials or test remote server availability.
 
-## Contents
+## 📚 Contents
 
-[Features](#features) · [Architecture](#architecture) · [Installation](#deploy) · [Automatic deployment](#auto-deploy) · [Telegram](#telegram) · [Custom domain](#domain) · [Daily use](#usage) · [Local development](#development) · [Configuration](#configuration) · [Backup & recovery](#operations) · [API](#api) · [Troubleshooting](#troubleshooting) · [Contributing](#contributing) · [License](#license)
+[✨ Features](#features) · [🏗️ Architecture](#architecture) · [🚀 Installation](#deploy) · [🔄 Automatic deployment](#auto-deploy) · [🤖 Telegram](#telegram) · [🌐 Custom domain](#domain) · [🧭 Daily use](#usage) · [💻 Local development](#development) · [🔧 Configuration](#configuration) · [💾 Backup & recovery](#operations) · [🔌 API](#api) · [🛠️ Troubleshooting](#troubleshooting) · [🤝 Contributing](#contributing) · [📄 License](#license)
 
 <a id="features"></a>
-## Features
+## ✨ Features
 
 - Create, rename, enable/disable and delete users with independent subscription tokens.
 - Manage per-user configs and Raw/Base64 subscription links.
@@ -34,7 +34,7 @@ A self-hosted subscription-config manager for Cloudflare Workers and KV, with a 
 - Telegram user/config management, file uploads, bulk operations and Mini App authentication, with a separate persistent bot-language preference.
 
 <a id="architecture"></a>
-## Architecture
+## 🏗️ Architecture
 
 ```mermaid
 flowchart LR
@@ -50,13 +50,13 @@ The panel, API, subscription endpoints and bot webhook run in `worker.js`. Data 
 
 | Your goal | Start here |
 | --- | --- |
-| Install and deploy once | [Manual installation](#deploy) |
-| Deploy automatically after a push | [Cloudflare Builds or GitHub Actions](#auto-deploy) |
-| Try it on your machine | [Local development](#development) |
-| Upgrade an existing installation | [Maintenance and recovery](#operations) |
+| Install and deploy once | [🚀 Manual installation](#deploy) |
+| Deploy automatically after a push | [🔄 Cloudflare Builds or GitHub Actions](#auto-deploy) |
+| Try it on your machine | [💻 Local development](#development) |
+| Upgrade an existing installation | [💾 Maintenance and recovery](#operations) |
 
 <a id="deploy"></a>
-## Deploy your instance
+## 🚀 Deploy your instance
 
 You need a Cloudflare account with Workers/KV access, Git, and **Node.js 22 or newer** (the included CI uses Node.js 24). A GitHub account/fork is needed for automatic deployment. A Telegram bot and custom domain are optional.
 
@@ -92,11 +92,11 @@ npx wrangler login
 The example enables a `workers.dev` URL. If you disable it, configure your own domain/routes. Optional `PUBLIC_BASE_URL` sets the public origin used for generated subscription links.
 
 <a id="auto-deploy"></a>
-## Deploy automatically when you push to `main`
+## 🔄 Deploy automatically when you push to `main`
 
 Choose **one** production deployment method so the same push does not deploy twice. The included [workflow](.github/workflows/ci.yml) always runs tests/build checks; its deployment job stays disabled until you explicitly enable it.
 
-### Option A · Cloudflare Workers Builds
+### ☁️ Option A · Cloudflare Workers Builds
 
 First complete the manual setup above. For an existing Worker, open **Workers & Pages → your Worker → Settings → Builds → Connect**, authorize GitHub and select your repository and `main`. The Worker name must match the generated config. See [Cloudflare's connection guide](https://developers.cloudflare.com/workers/ci-cd/builds/).
 
@@ -116,7 +116,7 @@ Use these project-specific settings:
 
 Push a commit to `main` and follow the build log in Cloudflare. Keep `DEPLOY_TO_CLOUDFLARE` unset in GitHub if you use this method.
 
-### Option B · The included GitHub Actions workflow
+### ⚙️ Option B · The included GitHub Actions workflow
 
 In your repository, open **Settings → Secrets and variables → Actions**. Add:
 
@@ -134,12 +134,12 @@ Create an **Edit Cloudflare Workers** API token, restricted to the account you d
 
 The workflow uses the [official Wrangler action](https://github.com/cloudflare/wrangler-action), pinned to a commit. It generates the config and uploads `ADMIN_PASSWORD` as a Worker Secret. Tests must pass before deployment. Push to `main`, or select **Actions → Checks and deploy → Run workflow** on `main`. For forks, enable Actions first if GitHub asks. Leave the enable variable unset to run checks without deploying.
 
-### Verify the result
+### ✅ Verify the result
 
 After a successful deployment, open `/admin`, sign in, create a test user, save a test config and check its Raw link. Confirm the user list survives a subsequent code deployment. Your existing namespace must stay the same; a different namespace represents a different dataset.
 
 <a id="telegram"></a>
-## Telegram
+## 🤖 Telegram
 
 Create a bot with BotFather. In the panel's Telegram section, enter its token and your numeric admin Telegram ID, enable the bot and save. Saving registers the webhook and command list. Only the configured admin can manage the instance through the bot. Send `/start` to the bot, or use the panel's test-message button.
 
@@ -157,14 +157,14 @@ vless://...
 `USER_ID` is the panel user's internal ID, such as `u_xxxxx`, not your Telegram ID. Get it from user management. You can also send a text file with the command as its caption.
 
 <a id="domain"></a>
-## Custom domain
+## 🌐 Custom domain
 
 Add a domain through **Worker → Settings → Domains & Routes → Add → Custom Domain**. Your domain must be available in your Cloudflare account. See the [official Custom Domains guide](https://developers.cloudflare.com/workers/configuration/routing/custom-domains/).
 
 Set `PUBLIC_BASE_URL` to an origin such as `https://configs.example.com` if generated subscription links should use that host. It does not configure DNS itself. For manual deployments, uncomment `[vars]` in your local config. For automatic deployments, use the variable in the relevant table above. If the bot should use the new host, open the panel on that host and save Telegram settings again; update BotFather's Mini App URL too.
 
 <a id="usage"></a>
-## Daily use
+## 🧭 Daily use
 
 | Task | Panel workflow |
 | --- | --- |
@@ -203,7 +203,7 @@ Interactive bot buttons also provide rename, token regeneration and deletion con
 </details>
 
 <a id="development"></a>
-## Local development
+## 💻 Local development
 
 Copy `wrangler.example.toml` to `wrangler.toml`, and `.dev.vars.example` to `.dev.vars`. Replace the example password with your own local password, then run:
 
@@ -216,7 +216,7 @@ npm run dev
 Open `/admin` on the local URL printed by Wrangler. Local KV lives under `.wrangler/` and does not use production KV data. Tests use in-memory KV and mock Telegram API requests.
 
 <a id="configuration"></a>
-## Configuration and data
+## 🔧 Configuration and data
 
 | Setting | Location | Purpose |
 | --- | --- | --- |
@@ -229,7 +229,7 @@ Open `/admin` on the local URL printed by Wrangler. Local KV lives under `.wrang
 Real deployment files, `.dev.vars`, `.env` files, logs, dependencies and local KV data are ignored by Git. Never commit real tokens, passwords, exported KV data or subscription links. Each operator must create their own namespace and bot. Config input is limited to 5 MB.
 
 <a id="operations"></a>
-## Backup, updates and recovery
+## 💾 Backup, updates and recovery
 
 **Backups.** Download each user's TXT before a major change. The in-app restore keeps a previous nonempty saved config; it is not a full namespace backup or version history. To preserve users, tokens, settings and password state too, back up all KV keys **and values** using authenticated Cloudflare KV tooling/API and keep the result outside this repository. A list of key names alone is not a full backup.
 
@@ -255,7 +255,7 @@ Sign in using the new Secret. This does not remove users or configs. Existing au
 **Existing installations.** Your old `wrangler.toml` remains local when updating a checkout. In a fresh clone, create it from the example using your existing resource IDs. Saved passwords remain valid; only fresh installations require the bootstrap Secret. Replace the old `admin` password if it is still in use.
 
 <a id="api"></a>
-## Config-copy API
+## 🔌 Config-copy API
 
 Both endpoints require admin authentication:
 
@@ -265,7 +265,7 @@ Both endpoints require admin authentication:
 Copies preserve source text and retain the destination's identity, token and enabled status. Missing, empty and oversized sources are rejected before destination writes; copying a user onto itself is rejected.
 
 <a id="troubleshooting"></a>
-## Troubleshooting
+## 🛠️ Troubleshooting
 
 | Symptom | What to check |
 | --- | --- |
@@ -286,7 +286,7 @@ Copies preserve source text and retain the destination's identity, token and ena
 Use `npx wrangler tail` for live diagnostics, without posting credentials or subscription URLs in public issues. KV is optimized for reads and is [eventually consistent](https://developers.cloudflare.com/kv/concepts/how-kv-works/); this application does not provide transactional multi-admin writes. Cloudflare usage and availability depend on your plan; check [current KV limits](https://developers.cloudflare.com/kv/platform/limits/).
 
 <a id="contributing"></a>
-## Project structure and contributing
+## 🤝 Project structure and contributing
 
 ```text
 worker.js                    Worker routes, panel and Telegram bot
@@ -303,6 +303,6 @@ LICENSE                     MIT license
 Run `npm test` before submitting changes. Keep both READMEs and language strings in sync. Report reproducible bugs through [Issues](https://github.com/erfan-tahvilian/config-pilot/issues), using sanitized sample data. Real tokens, account settings, subscription links and exported KV data do not belong in issues or commits. Dependency versions are locked for reproducible installs; review and test upgrades before changing the lockfile.
 
 <a id="license"></a>
-## License
+## 📄 License
 
 [MIT](LICENSE). You may use, modify and redistribute the project under the license terms.
