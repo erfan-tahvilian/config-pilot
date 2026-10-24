@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="360" height="88" viewBox="0 0 360 88" role="img" aria-labelledby="title desc">
+  <title id="title">Buy me a coffee — Config Pilot</title>
+  <desc id="desc">Support Config Pilot's development on Buy Me a Coffee.</desc>
+  <defs>
+    <linearGradient id="bg" x2="1" y2="1"><stop stop-color="#f2edff"/><stop offset="1" stop-color="#eaf9fd"/></linearGradient>
+    <linearGradient id="accent" x2="1" y2="1"><stop stop-color="#9375ff"/><stop offset="1" stop-color="#36d5ee"/></linearGradient>
+  </defs>
+  <rect x="1" y="1" width="358" height="86" rx="18" fill="url(#bg)" stroke="#c5b7ec"/>
+  <rect x="16" y="18" width="52" height="52" rx="15" fill="url(#accent)"/>
+  <g fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M29 37h22v13a9 9 0 0 1-9 9h-4a9 9 0 0 1-9-9zM51 39h4a6 6 0 0 1 0 12h-4M34 30v-4m7 4v-4m7 4v-4"/>
+  </g>
+  <text x="84" y="39" fill="#5b5981" font-family="Segoe UI,Arial,sans-serif" font-size="12" letter-spacing=".6">SUPPORT CONFIG PILOT</text>
+  <text x="83" y="62" fill="#252049" font-family="Segoe UI,Arial,sans-serif" font-size="22" font-weight="700">Buy me a coffee</text>
+  <path d="M318 44h17m-7-7 7 7-7 7" fill="none" stroke="#6847bf" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

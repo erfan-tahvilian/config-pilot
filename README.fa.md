@@ -9,7 +9,7 @@
     <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-22A06B" alt="MIT license" /></a>
     <a href="https://github.com/erfan-tahvilian/config-pilot/actions/workflows/ci.yml"><img src="https://github.com/erfan-tahvilian/config-pilot/actions/workflows/ci.yml/badge.svg" alt="Tests and Worker build" /></a>
   </p>
-  <p><a href="README.md">English</a> · <a href="README.fa.md">فارسی</a> · <a href="#deploy">🚀 نصب و انتشار</a> · <a href="#auto-deploy">🔄 انتشار خودکار</a> · <a href="https://github.com/erfan-tahvilian/config-pilot/issues">🐛 گزارش مشکل</a></p>
+  <p><a href="README.md">English</a> · <a href="README.fa.md">فارسی</a> · <a href="#deploy">🚀 نصب و انتشار</a> · <a href="#auto-deploy">🔄 انتشار خودکار</a> · <a href="#support">💜 حمایت مالی</a> · <a href="https://github.com/erfan-tahvilian/config-pilot/issues">🐛 گزارش مشکل</a></p>
 </div>
 
 ---
@@ -22,7 +22,7 @@
 
 ## 📚 فهرست راهنما
 
-[✨ قابلیت‌ها](#features) · [🏗️ معماری](#architecture) · [🚀 نصب](#deploy) · [🔄 انتشار خودکار](#auto-deploy) · [🤖 تلگرام](#telegram) · [🌐 دامنه](#domain) · [🧭 استفادهٔ روزمره](#usage) · [💻 توسعهٔ محلی](#development) · [🔧 تنظیمات](#configuration) · [💾 بکاپ و بازیابی](#operations) · [🔌 API](#api) · [🛠️ رفع خطا](#troubleshooting) · [🤝 مشارکت](#contributing) · [📄 مجوز](#license)
+[✨ قابلیت‌ها](#features) · [🏗️ معماری](#architecture) · [🚀 نصب](#deploy) · [🔄 انتشار خودکار](#auto-deploy) · [🤖 تلگرام](#telegram) · [🌐 دامنه](#domain) · [🧭 استفادهٔ روزمره](#usage) · [💻 توسعهٔ محلی](#development) · [🔧 تنظیمات](#configuration) · [💾 بکاپ و بازیابی](#operations) · [🔌 API](#api) · [🛠️ رفع خطا](#troubleshooting) · [🤝 مشارکت](#contributing) · [💜 حمایت مالی](#support) · [📄 مجوز](#license)
 
 <a id="features"></a>
 ## ✨ قابلیت‌ها
@@ -339,6 +339,59 @@ LICENSE                     MIT license
 </div>
 
 پیش از ارسال تغییرات `npm test` را اجرا کنید. هر دو README و متن‌های ترجمه را هماهنگ نگه دارید. مشکل قابل‌بازتولید را با دادهٔ نمونهٔ پاک‌سازی‌شده در [Issues](https://github.com/erfan-tahvilian/config-pilot/issues) گزارش کنید. توکن، تنظیمات حساب، لینک اشتراک و خروجی KV واقعی نباید در Issue یا کامیت باشد. نسخهٔ وابستگی‌ها قفل شده است؛ به‌روزرسانی lockfile را بعد از بررسی و تست انجام دهید.
+
+<a id="support"></a>
+## 💜 حمایت مالی و اسپانسر
+
+اگر Config Pilot برایتان مفید است، می‌توانید با حمایت مالی به ادامهٔ توسعه و نگهداری آن کمک کنید.
+
+<div dir="ltr">
+
+<a href="https://buymeacoffee.com/ErfanTahvilian">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/support-dark.svg">
+    <img src="docs/assets/support-light.svg" width="360" alt="Support Config Pilot on Buy Me a Coffee.">
+  </picture>
+</a>
+
+</div>
+
+<details>
+<summary><strong>حمایت با ارز دیجیتال</strong></summary>
+
+برای ارسال، شبکهٔ مشخص‌شدهٔ هر آدرس را انتخاب کنید.
+
+<div dir="ltr">
+
+**Tron · TRX**
+
+```text
+TL8WyZLLGu8UraHAT8dCoeMsnzGpX2oAYn
+```
+
+</div>
+
+<div dir="ltr">
+
+**Binance Coin · BNB · BEP20**
+
+```text
+0xeC4F61F21238685cC842bC236D86684e5fc2Bc57
+```
+
+</div>
+
+<div dir="ltr">
+
+**Bitcoin · BTC**
+
+```text
+bc1q2y9m8y02fqgsr4c6533duwmqtmrhadc8k8mkt4
+```
+
+</div>
+
+</details>
 
 <a id="license"></a>
 ## 📄 مجوز

@@ -9,7 +9,7 @@
     <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-22A06B" alt="MIT license" /></a>
     <a href="https://github.com/erfan-tahvilian/config-pilot/actions/workflows/ci.yml"><img src="https://github.com/erfan-tahvilian/config-pilot/actions/workflows/ci.yml/badge.svg" alt="Tests and Worker build" /></a>
   </p>
-  <p><a href="README.md">English</a> · <a href="README.fa.md">فارسی</a> · <a href="#deploy">🚀 Deploy</a> · <a href="#auto-deploy">🔄 Automatic deployment</a> · <a href="https://github.com/erfan-tahvilian/config-pilot/issues">🐛 Report an issue</a></p>
+  <p><a href="README.md">English</a> · <a href="README.fa.md">فارسی</a> · <a href="#deploy">🚀 Deploy</a> · <a href="#auto-deploy">🔄 Automatic deployment</a> · <a href="#support">💜 Support</a> · <a href="https://github.com/erfan-tahvilian/config-pilot/issues">🐛 Report an issue</a></p>
 </div>
 
 ---
@@ -20,7 +20,7 @@ A self-hosted subscription-config manager for Cloudflare Workers and KV, with a 
 
 ## 📚 Contents
 
-[✨ Features](#features) · [🏗️ Architecture](#architecture) · [🚀 Installation](#deploy) · [🔄 Automatic deployment](#auto-deploy) · [🤖 Telegram](#telegram) · [🌐 Custom domain](#domain) · [🧭 Daily use](#usage) · [💻 Local development](#development) · [🔧 Configuration](#configuration) · [💾 Backup & recovery](#operations) · [🔌 API](#api) · [🛠️ Troubleshooting](#troubleshooting) · [🤝 Contributing](#contributing) · [📄 License](#license)
+[✨ Features](#features) · [🏗️ Architecture](#architecture) · [🚀 Installation](#deploy) · [🔄 Automatic deployment](#auto-deploy) · [🤖 Telegram](#telegram) · [🌐 Custom domain](#domain) · [🧭 Daily use](#usage) · [💻 Local development](#development) · [🔧 Configuration](#configuration) · [💾 Backup & recovery](#operations) · [🔌 API](#api) · [🛠️ Troubleshooting](#troubleshooting) · [🤝 Contributing](#contributing) · [💜 Support](#support) · [📄 License](#license)
 
 <a id="features"></a>
 ## ✨ Features
@@ -303,6 +303,43 @@ LICENSE                     MIT license
 ```
 
 Run `npm test` before submitting changes. Keep both READMEs and language strings in sync. Report reproducible bugs through [Issues](https://github.com/erfan-tahvilian/config-pilot/issues), using sanitized sample data. Real tokens, account settings, subscription links and exported KV data do not belong in issues or commits. Dependency versions are locked for reproducible installs; review and test upgrades before changing the lockfile.
+
+<a id="support"></a>
+## 💜 Support and sponsorship
+
+If Config Pilot is useful to you, consider supporting its continued development and maintenance.
+
+<a href="https://buymeacoffee.com/ErfanTahvilian">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/support-dark.svg">
+    <img src="docs/assets/support-light.svg" width="360" alt="Support Config Pilot on Buy Me a Coffee.">
+  </picture>
+</a>
+
+<details>
+<summary><strong>Support with cryptocurrency</strong></summary>
+
+Use the network shown for each address when sending a contribution.
+
+**Tron · TRX**
+
+```text
+TL8WyZLLGu8UraHAT8dCoeMsnzGpX2oAYn
+```
+
+**Binance Coin · BNB · BEP20**
+
+```text
+0xeC4F61F21238685cC842bC236D86684e5fc2Bc57
+```
+
+**Bitcoin · BTC**
+
+```text
+bc1q2y9m8y02fqgsr4c6533duwmqtmrhadc8k8mkt4
+```
+
+</details>
 
 <a id="license"></a>
 ## 📄 License
