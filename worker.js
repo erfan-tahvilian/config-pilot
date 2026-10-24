@@ -183,6 +183,10 @@ export default {
           );
 
         const users = await getUsers(env);
+        // Read and validate the source before creating any records.
+        const sourceConfigs = payload.sourceUserId
+          ? await readSourceConfigs(env, users, payload.sourceUserId)
+          : null;
         const user = {
           id: generateId(),
           name,
@@ -193,10 +197,18 @@ export default {
           lastConfigUpdate: null,
         };
 
+        if (sourceConfigs !== null) {
+          const saved = await saveConfigsForUser(env, user, sourceConfigs, {
+            normalize: false, dedupe: false,
+          });
+          user.lastConfigUpdate = saved.meta.updatedAt;
+          user.updatedAt = saved.meta.updatedAt;
+        } else {
+          await env.CONFIGS_KV.put(configKey(user.id), "");
+        }
         users.push(user);
         await saveUsers(env, users);
         await env.CONFIGS_KV.put(tokenKey(user.token), user.id);
-        await env.CONFIGS_KV.put(configKey(user.id), "");
 
         return jsonResponse({
           ok: true,
@@ -327,6 +339,31 @@ export default {
           configs: result.configs,
           meta: result.meta,
           stats: result.stats,
+        });
+      }
+
+      if (
+        url.pathname === "/api/admin/users/configs/copy" &&
+        request.method === "POST"
+      ) {
+        await requireAdmin(request, env);
+        const payload = await readJson(request);
+        const users = await getUsers(env);
+        const user = users.find((item) => item.id === payload.id);
+        if (!user) return jsonResponse({ ok: false, error: "کاربر پیدا نشد." }, 404);
+        if (payload.sourceUserId === user.id) {
+          return jsonResponse({ ok: false, error: "کاربر منبع باید متفاوت باشد." }, 400);
+        }
+        const configs = await readSourceConfigs(env, users, payload.sourceUserId);
+        const saved = await saveConfigsForUser(env, user, configs, {
+          normalize: false, dedupe: false,
+        });
+        user.lastConfigUpdate = saved.meta.updatedAt;
+        user.updatedAt = saved.meta.updatedAt;
+        await saveUsers(env, users);
+        return jsonResponse({
+          ok: true, message: "کانفیگ‌ها از کاربر منبع کپی شدند.",
+          user: publicUser(user, url, env), ...saved,
         });
       }
 
@@ -832,6 +869,26 @@ function publicUser(user, url, env) {
       base64: base + "/sub/" + token + "?format=base64",
     },
   };
+}
+
+async function readSourceConfigs(env, users, sourceUserId) {
+  const source = users.find((user) => user.id === sourceUserId);
+  let message = "";
+  let configs = "";
+  if (!source) message = "کاربر منبع یافت نشد.";
+  else {
+    configs = (await env.CONFIGS_KV.get(configKey(source.id))) || "";
+    if (!configs.trim()) message = "کاربر منبع فاقد کانفیگ است.";
+    else if (new TextEncoder().encode(configs).length > MAX_CONFIG_BYTES)
+      message = "حجم کانفیگ‌ها برای این پنل بیش از ۵ مگابایت است.";
+  }
+  if (message) {
+    const error = new Error(message);
+    error.status = 400;
+    error.expose = true;
+    throw error;
+  }
+  return configs;
 }
 
 async function saveConfigsForUser(env, user, inputText, options = {}) {
@@ -2791,7 +2848,7 @@ const ADMIN_HTML = `<!doctype html>
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>پنل مدیریت کانفیگ‌ها</title>
+  <title data-i18n="پنل مدیریت کانفیگ‌ها">پنل مدیریت کانفیگ‌ها</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/lucide@latest/dist/umd/lucide.min.js"></script>
   <style>
@@ -3171,22 +3228,60 @@ const ADMIN_HTML = `<!doctype html>
       .topbar { align-items: flex-start; flex-direction: column; }
       .linkrow { grid-template-columns: 1fr; }
     }
+
+    :root { color-scheme: dark; }
+    :root[data-theme="light"] {
+      color-scheme: light;
+      --bg: #f3f5fc; --surface: #fff; --surface2: #eef0f8;
+      --border: #d5daea; --text: #1b2540; --muted: #53617b;
+      --primary: #6847df; --primary2: #007eaa;
+      --shadow: 0 24px 90px rgba(35,49,84,.12);
+    }
+    [data-theme="light"] body { background-image: radial-gradient(circle at 15% 10%, #e6dfff, transparent 40%), linear-gradient(135deg, #f3f5fc, #eaf2fa); }
+    [data-theme="light"] .shell, [data-theme="light"] .card { background: rgba(255,255,255,.9) !important; }
+    [data-theme="light"] .input, [data-theme="light"] .textarea,
+    [data-theme="light"] .select, [data-theme="light"] .select option,
+    [data-theme="light"] .code, [data-theme="light"] .stat,
+    [data-theme="light"] .drop, [data-theme="light"] .tab,
+    [data-theme="light"] .user-item, [data-theme="light"] .checks label,
+    [data-theme="light"] .checks input[type="checkbox"] { background: #f5f7fc; border-color: var(--border); color: var(--text); }
+    [data-theme="light"] .label { color: var(--text); }
+    [data-theme="light"] .btn { background: #e9edf7; border-color: var(--border); }
+    [data-theme="light"] .btn.primary { background: linear-gradient(135deg, #6847df, #386dd4); color: #fff; }
+    [data-theme="light"] .btn.success { background: linear-gradient(135deg, #087954, #006c66); color: #fff; }
+    [data-theme="light"] .btn.danger { background: #fff0f3; border-color: #e7b1be; color: #ac2344; }
+    [data-theme="light"] .tab.active, [data-theme="light"] .user-item.active { background: #e9e3ff; border-color: var(--primary); }
+    [data-theme="light"] .checks input[type="checkbox"]:checked { background: var(--primary); }
+    [data-theme="light"] .toast-item { background: #fff; border-color: var(--border); }
+    [data-theme="light"] .toast-item.ok { border-color: #087954; }
+    [data-theme="light"] .toast-item.err { border-color: #ac2344; }
+    .preferences { display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 14px; }
+    .preferences .btn { width: auto; min-width: 46px; min-height: 44px; }
+    .btn:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+    .btn:focus-visible, .tab:focus-visible { outline: 3px solid var(--primary2); outline-offset: 3px; }
+    .tab { text-align: start; }
+    html[dir="ltr"] .input.rtl { direction: ltr; text-align: left; }
+    @media (max-width: 520px) { html[dir="ltr"] .checks label { flex-direction: row; } }
   </style>
 </head>
 <body>
   <main class="app">
+    <div class="preferences" aria-label="Panel preferences">
+      <button id="languageToggle" class="btn" type="button"></button>
+      <button id="themeToggle" class="btn" type="button"></button>
+    </div>
     <section id="loginView" class="login-wrap">
       <div class="shell login-card">
         <div class="brand">
           <div class="logo"><i data-lucide="shield-check"></i></div>
-          <div><h1>پنل مدیریت کانفیگ‌ها</h1></div>
+          <div><h1 data-i18n="پنل مدیریت کانفیگ‌ها">پنل مدیریت کانفیگ‌ها</h1></div>
         </div>
         <form id="loginForm">
           <div class="field">
-            <label class="label" for="passwordInput">رمز عبور</label>
-            <input id="passwordInput" class="input rtl" type="password" autocomplete="current-password" placeholder="رمز عبور" />
+            <label class="label" for="passwordInput"><span data-i18n="رمز عبور">رمز عبور</span></label>
+            <input id="passwordInput" class="input rtl" type="password" autocomplete="current-password" placeholder="رمز عبور" data-i18n-placeholder="رمز عبور" />
           </div>
-          <button class="btn primary full" type="submit"><i data-lucide="log-in"></i> ورود به پنل</button>
+          <button class="btn primary full" type="submit"><i data-lucide="log-in"></i> <span data-i18n="ورود به پنل">ورود به پنل</span></button>
         </form>
       </div>
     </section>
@@ -3196,26 +3291,26 @@ const ADMIN_HTML = `<!doctype html>
         <div class="brand">
           <div class="logo"><i data-lucide="shield-check"></i></div>
           <div>
-            <h1>مدیریت پیشرفته کانفیگ‌ها</h1>
-            <p class="subtitle">کاربر ایجاد کنید، کانفیگ اختصاصی بدهید، تنظیمات گروهی اعمال کنید و ربات تلگرام را متصل کنید.</p>
+            <h1><span data-i18n="مدیریت پیشرفته کانفیگ‌ها">مدیریت پیشرفته کانفیگ‌ها</span></h1>
+            <p class="subtitle"><span data-i18n="کاربر ایجاد کنید، کانفیگ اختصاصی بدهید، تنظیمات گروهی اعمال کنید و ربات تلگرام را متصل کنید.">کاربر ایجاد کنید، کانفیگ اختصاصی بدهید، تنظیمات گروهی اعمال کنید و ربات تلگرام را متصل کنید.</span></p>
           </div>
         </div>
         <div class="toolbar">
-          <button id="refreshBtn" class="btn"><i data-lucide="refresh-cw"></i> بارگذاری مجدد</button>
-          <button id="logoutBtn" class="btn ghost"><i data-lucide="log-out"></i> خروج</button>
+          <button id="refreshBtn" class="btn"><i data-lucide="refresh-cw"></i> <span data-i18n="بارگذاری مجدد">بارگذاری مجدد</span></button>
+          <button id="logoutBtn" class="btn ghost"><i data-lucide="log-out"></i> <span data-i18n="خروج">خروج</span></button>
         </div>
       </div>
 
       <div class="shell dashboard">
         <div class="layout">
           <aside class="card">
-            <div class="card-title"><h2>بخش‌ها</h2></div>
+            <div class="card-title"><h2><span data-i18n="بخش‌ها">بخش‌ها</span></h2></div>
             <div class="tabs">
-              <button class="tab active" data-tab="usersPanel"><i data-lucide="users"></i> کاربران</button>
-              <button class="tab" data-tab="configsPanel"><i data-lucide="file-cog"></i> کانفیگ اختصاصی کاربر</button>
-              <button class="tab" data-tab="bulkPanel"><i data-lucide="layers"></i> اعمال گروهی کانفیگ</button>
-              <button class="tab" data-tab="securityPanel"><i data-lucide="shield"></i> امنیت و رمز عبور</button>
-              <button class="tab" data-tab="telegramPanel"><i data-lucide="bot"></i> ربات تلگرام</button>
+              <button class="tab active" data-tab="usersPanel"><i data-lucide="users"></i> <span data-i18n="کاربران">کاربران</span></button>
+              <button class="tab" data-tab="configsPanel"><i data-lucide="file-cog"></i> <span data-i18n="کانفیگ اختصاصی کاربر">کانفیگ اختصاصی کاربر</span></button>
+              <button class="tab" data-tab="bulkPanel"><i data-lucide="layers"></i> <span data-i18n="اعمال گروهی کانفیگ">اعمال گروهی کانفیگ</span></button>
+              <button class="tab" data-tab="securityPanel"><i data-lucide="shield"></i> <span data-i18n="امنیت و رمز عبور">امنیت و رمز عبور</span></button>
+              <button class="tab" data-tab="telegramPanel"><i data-lucide="bot"></i> <span data-i18n="ربات تلگرام">ربات تلگرام</span></button>
             </div>
           </aside>
 
@@ -3223,15 +3318,19 @@ const ADMIN_HTML = `<!doctype html>
             <div id="usersPanel" class="panel active">
               <div class="grid2">
                 <div class="card">
-                  <div class="card-title"><h2>ایجاد کاربر</h2></div>
+                  <div class="card-title"><h2><span data-i18n="ایجاد کاربر">ایجاد کاربر</span></h2></div>
                   <div class="field">
-                    <label class="label">نام کاربر</label>
-                    <input id="newUserName" class="input rtl" placeholder="مثلاً موبایل، لپ‌تاپ، کاربر ۱" />
+                    <label class="label"><span data-i18n="نام کاربر">نام کاربر</span></label>
+                    <input id="newUserName" class="input rtl" placeholder="مثلاً موبایل، لپ‌تاپ، کاربر ۱" data-i18n-placeholder="مثلاً موبایل، لپ‌تاپ، کاربر ۱" />
                   </div>
-                  <button id="createUserBtn" class="btn primary full"><i data-lucide="user-plus"></i> ایجاد کاربر</button>
+                  <div class="field">
+                    <label class="label" for="newUserSource"><span data-i18n="کپی کانفیگ از کاربر دیگر (اختیاری)">کپی کانفیگ از کاربر دیگر (اختیاری)</span></label>
+                    <select id="newUserSource" class="select"></select>
+                  </div>
+                  <button id="createUserBtn" class="btn primary full"><i data-lucide="user-plus"></i> <span data-i18n="ایجاد کاربر">ایجاد کاربر</span></button>
                 </div>
                 <div class="card">
-                  <div class="card-title"><h2>کاربران</h2></div>
+                  <div class="card-title"><h2><span data-i18n="کاربران">کاربران</span></h2></div>
                   <div id="usersList" class="user-list"></div>
                 </div>
               </div>
@@ -3240,58 +3339,64 @@ const ADMIN_HTML = `<!doctype html>
             <div id="configsPanel" class="panel">
               <div class="card">
                 <div class="card-title">
-                  <h2>کانفیگ اختصاصی کاربر</h2>
+                  <h2><span data-i18n="کانفیگ اختصاصی کاربر">کانفیگ اختصاصی کاربر</span></h2>
                   <div class="toolbar">
-                    <button id="fileBtn" class="btn"><i data-lucide="upload"></i> آپلود فایل</button>
-                    <button id="cleanBtn" class="btn"><i data-lucide="sparkles"></i> پاک‌سازی</button>
-                    <button id="downloadBtn" class="btn"><i data-lucide="download"></i> دانلود TXT</button>
-                    <button id="restoreBtn" class="btn danger"><i data-lucide="history"></i> بازیابی بکاپ</button>
-                    <button id="saveConfigsBtn" class="btn success"><i data-lucide="save"></i> ذخیره کانفیگ‌ها</button>
+                    <button id="fileBtn" class="btn"><i data-lucide="upload"></i> <span data-i18n="آپلود فایل">آپلود فایل</span></button>
+                    <button id="cleanBtn" class="btn"><i data-lucide="sparkles"></i> <span data-i18n="پاک‌سازی">پاک‌سازی</span></button>
+                    <button id="downloadBtn" class="btn"><i data-lucide="download"></i> <span data-i18n="دانلود TXT">دانلود TXT</span></button>
+                    <button id="restoreBtn" class="btn danger"><i data-lucide="history"></i> <span data-i18n="بازیابی بکاپ">بازیابی بکاپ</span></button>
+                    <button id="saveConfigsBtn" class="btn success"><i data-lucide="save"></i> <span data-i18n="ذخیره کانفیگ‌ها">ذخیره کانفیگ‌ها</span></button>
                   </div>
                 </div>
 
                 <div class="grid2">
                   <div>
                     <div class="field">
-                      <label class="label">انتخاب کاربر</label>
+                      <label class="label"><span data-i18n="انتخاب کاربر">انتخاب کاربر</span></label>
                       <select id="selectedUserSelect" class="select"></select>
                     </div>
                     <div class="field">
-                      <label class="label">نام کاربر</label>
+                      <label class="label"><span data-i18n="نام کاربر">نام کاربر</span></label>
                       <input id="editUserName" class="input rtl" />
                     </div>
                     <div class="checks">
-                      <label><input id="editUserEnabled" type="checkbox" checked /> کاربر فعال باشد</label>
+                      <label><input id="editUserEnabled" type="checkbox" checked /> <span data-i18n="کاربر فعال باشد">کاربر فعال باشد</span></label>
                     </div>
                     <div class="toolbar">
-                      <button id="updateUserBtn" class="btn"><i data-lucide="check-circle"></i> ذخیره مشخصات</button>
-                      <button id="regenTokenBtn" class="btn danger"><i data-lucide="key-round"></i> ساخت توکن جدید</button>
-                      <button id="deleteUserBtn" class="btn danger"><i data-lucide="trash-2"></i> حذف کاربر</button>
+                      <button id="updateUserBtn" class="btn"><i data-lucide="check-circle"></i> <span data-i18n="ذخیره مشخصات">ذخیره مشخصات</span></button>
+                      <button id="regenTokenBtn" class="btn danger"><i data-lucide="key-round"></i> <span data-i18n="ساخت توکن جدید">ساخت توکن جدید</span></button>
+                      <button id="deleteUserBtn" class="btn danger"><i data-lucide="trash-2"></i> <span data-i18n="حذف کاربر">حذف کاربر</span></button>
                     </div>
                   </div>
                   <div>
-                    <div class="label">لینک Raw</div>
-                    <div class="linkrow"><div id="rawLink" class="code">-</div><button id="copyRawBtn" class="btn small"><i data-lucide="copy"></i> کپی</button></div>
+                    <div class="label"><span data-i18n="لینک Raw">لینک Raw</span></div>
+                    <div class="linkrow"><div id="rawLink" class="code">-</div><button id="copyRawBtn" class="btn small"><i data-lucide="copy"></i> <span data-i18n="کپی">کپی</span></button></div>
                     <div style="height:8px"></div>
-                    <div class="label">لینک Base64</div>
-                    <div class="linkrow"><div id="base64Link" class="code">-</div><button id="copyBase64Btn" class="btn small"><i data-lucide="copy"></i> کپی</button></div>
-                    <button id="openRawBtn" class="btn full"><i data-lucide="external-link"></i> تست لینک Raw</button>
+                    <div class="label"><span data-i18n="لینک Base64">لینک Base64</span></div>
+                    <div class="linkrow"><div id="base64Link" class="code">-</div><button id="copyBase64Btn" class="btn small"><i data-lucide="copy"></i> <span data-i18n="کپی">کپی</span></button></div>
+                    <button id="openRawBtn" class="btn full"><i data-lucide="external-link"></i> <span data-i18n="تست لینک Raw">تست لینک Raw</span></button>
                   </div>
                 </div>
 
+                <div class="field">
+                  <label class="label" for="copySourceUser"><span data-i18n="کپی کانفیگ از کاربر دیگر">کپی کانفیگ از کاربر دیگر</span></label>
+                  <select id="copySourceUser" class="select"></select>
+                  <p class="muted"><span data-i18n="کانفیگ‌های کاربر منبع جایگزین می‌شوند. کانفیگ فعلی در بکاپ ذخیره می‌شود.">کانفیگ‌های کاربر منبع جایگزین می‌شوند. کانفیگ فعلی در بکاپ ذخیره می‌شود.</span></p>
+                  <button id="copyUserConfigsBtn" class="btn"><i data-lucide="copy"></i> <span data-i18n="کپی کانفیگ‌ها">کپی کانفیگ‌ها</span></button>
+                </div>
                 <div style="height:16px"></div>
                 <div class="stats">
-                  <div class="stat"><span>کل کانفیگ</span><strong id="statTotal">0</strong></div>
-                  <div class="stat"><span>شناخته‌شده</span><strong id="statValid">0</strong></div>
-                  <div class="stat"><span>نامشخص</span><strong id="statUnknown">0</strong></div>
-                  <div class="stat"><span>تکراری محتوایی</span><strong id="statDupContent">0</strong></div>
+                  <div class="stat"><span><span data-i18n="کل کانفیگ">کل کانفیگ</span></span><strong id="statTotal">0</strong></div>
+                  <div class="stat"><span><span data-i18n="شناخته‌شده">شناخته‌شده</span></span><strong id="statValid">0</strong></div>
+                  <div class="stat"><span><span data-i18n="نامشخص">نامشخص</span></span><strong id="statUnknown">0</strong></div>
+                  <div class="stat"><span><span data-i18n="تکراری محتوایی">تکراری محتوایی</span></span><strong id="statDupContent">0</strong></div>
                 </div>
 
                 <input id="fileInput" class="hidden" type="file" accept=".txt,.conf,.json,.yaml,.yml,text/plain" />
-                <div id="dropArea" class="drop">فایل را اینجا بکشید و رها کنید، یا روی «آپلود فایل» بزنید. متن فایل داخل باکس زیر نمایش داده می‌شود.</div>
+                <div id="dropArea" class="drop"><span data-i18n="فایل را اینجا بکشید و رها کنید، یا روی «آپلود فایل» بزنید. متن فایل داخل باکس زیر نمایش داده می‌شود.">فایل را اینجا بکشید و رها کنید، یا روی «آپلود فایل» بزنید. متن فایل داخل باکس زیر نمایش داده می‌شود.</span></div>
                 <div class="checks">
-                  <label><input id="normalizeCheck" type="checkbox" checked /> حذف خطوط خالی و فاصله‌های اضافی</label>
-                  <label><input id="dedupeCheck" type="checkbox" checked /> حذف کانفیگ‌های تکراری حتی با نام متفاوت</label>
+                  <label><input id="normalizeCheck" type="checkbox" checked /> <span data-i18n="حذف خطوط خالی و فاصله‌های اضافی">حذف خطوط خالی و فاصله‌های اضافی</span></label>
+                  <label><input id="dedupeCheck" type="checkbox" checked /> <span data-i18n="حذف کانفیگ‌های تکراری حتی با نام متفاوت">حذف کانفیگ‌های تکراری حتی با نام متفاوت</span></label>
                 </div>
                 <textarea id="configsText" class="textarea" spellcheck="false"></textarea>
               </div>
@@ -3300,101 +3405,101 @@ const ADMIN_HTML = `<!doctype html>
             <div id="bulkPanel" class="panel">
               <div class="card">
                 <div class="card-title">
-                  <h2>اعمال گروهی کانفیگ</h2>
+                  <h2><span data-i18n="اعمال گروهی کانفیگ">اعمال گروهی کانفیگ</span></h2>
                   <div class="toolbar" id="bulkTextToolbar">
-                    <button id="bulkFileBtn" class="btn"><i data-lucide="upload"></i> آپلود فایل</button>
-                    <button id="bulkCleanBtn" class="btn"><i data-lucide="sparkles"></i> پاک‌سازی</button>
+                    <button id="bulkFileBtn" class="btn"><i data-lucide="upload"></i> <span data-i18n="آپلود فایل">آپلود فایل</span></button>
+                    <button id="bulkCleanBtn" class="btn"><i data-lucide="sparkles"></i> <span data-i18n="پاک‌سازی">پاک‌سازی</span></button>
                   </div>
                 </div>
-                <p class="muted">در این بخش می‌توانید یک مجموعه کانفیگ را برای همه کاربران یا فقط کاربران انتخاب‌شده اعمال کنید. منبع کانفیگ می‌تواند متن، فایل یا کانفیگ‌های یک کاربر دیگر باشد.</p>
+                <p class="muted"><span data-i18n="در این بخش می‌توانید یک مجموعه کانفیگ را برای همه کاربران یا فقط کاربران انتخاب‌شده اعمال کنید. منبع کانفیگ می‌تواند متن، فایل یا کانفیگ‌های یک کاربر دیگر باشد.">در این بخش می‌توانید یک مجموعه کانفیگ را برای همه کاربران یا فقط کاربران انتخاب‌شده اعمال کنید. منبع کانفیگ می‌تواند متن، فایل یا کانفیگ‌های یک کاربر دیگر باشد.</span></p>
                 <div class="grid2">
                   <div class="field">
-                    <label class="label">نوع اعمال</label>
+                    <label class="label"><span data-i18n="نوع اعمال">نوع اعمال</span></label>
                     <select id="bulkMode" class="select">
-                      <option value="replace">جایگزینی کامل کانفیگ کاربران</option>
-                      <option value="append">افزودن به کانفیگ فعلی کاربران</option>
+                      <option value="replace" data-i18n="جایگزینی کامل کانفیگ کاربران">جایگزینی کامل کانفیگ کاربران</option>
+                      <option value="append" data-i18n="افزودن به کانفیگ فعلی کاربران">افزودن به کانفیگ فعلی کاربران</option>
                     </select>
                   </div>
                   <div class="field">
-                    <label class="label">محدوده اعمال</label>
+                    <label class="label"><span data-i18n="محدوده اعمال">محدوده اعمال</span></label>
                     <select id="bulkTarget" class="select">
-                      <option value="all">همه کاربران</option>
-                      <option value="selected">فقط کاربران انتخاب‌شده</option>
+                      <option value="all" data-i18n="همه کاربران">همه کاربران</option>
+                      <option value="selected" data-i18n="فقط کاربران انتخاب‌شده">فقط کاربران انتخاب‌شده</option>
                     </select>
                   </div>
                 </div>
                 <div id="bulkUsersBox" class="checks"></div>
                 <div class="grid2" style="margin-top:4px;margin-bottom:12px">
                   <div class="field">
-                    <label class="label">منبع کانفیگ</label>
+                    <label class="label"><span data-i18n="منبع کانفیگ">منبع کانفیگ</span></label>
                     <select id="bulkSourceType" class="select">
-                      <option value="text">متن / فایل</option>
-                      <option value="user">از کانفیگ‌های کاربر دیگر</option>
+                      <option value="text" data-i18n="متن / فایل">متن / فایل</option>
+                      <option value="user" data-i18n="از کانفیگ‌های کاربر دیگر">از کانفیگ‌های کاربر دیگر</option>
                     </select>
                   </div>
                   <div class="field" id="bulkSourceUserField" style="display:none">
-                    <label class="label">کاربر منبع</label>
+                    <label class="label"><span data-i18n="کاربر منبع">کاربر منبع</span></label>
                     <select id="bulkSourceUser" class="select"></select>
                   </div>
                 </div>
                 <div id="bulkTextInputBox">
                   <input id="bulkFileInput" class="hidden" type="file" accept=".txt,.conf,.json,.yaml,.yml,text/plain" />
-                  <div id="bulkDropArea" class="drop">فایل را اینجا بکشید و رها کنید، یا روی «آپلود فایل» بزنید. متن فایل داخل باکس زیر نمایش داده می‌شود.</div>
+                  <div id="bulkDropArea" class="drop"><span data-i18n="فایل را اینجا بکشید و رها کنید، یا روی «آپلود فایل» بزنید. متن فایل داخل باکس زیر نمایش داده می‌شود.">فایل را اینجا بکشید و رها کنید، یا روی «آپلود فایل» بزنید. متن فایل داخل باکس زیر نمایش داده می‌شود.</span></div>
                   <textarea id="bulkConfigsText" class="textarea small" spellcheck="false"></textarea>
                 </div>
-                <button id="applyBulkBtn" class="btn success full"><i data-lucide="check-circle"></i> اعمال کانفیگ‌ها</button>
+                <button id="applyBulkBtn" class="btn success full"><i data-lucide="check-circle"></i> <span data-i18n="اعمال کانفیگ‌ها">اعمال کانفیگ‌ها</span></button>
               </div>
             </div>
 
             <div id="securityPanel" class="panel">
               <div class="card">
-                <div class="card-title"><h2>تغییر رمز عبور پنل</h2></div>
+                <div class="card-title"><h2><span data-i18n="تغییر رمز عبور پنل">تغییر رمز عبور پنل</span></h2></div>
                 <div class="grid2">
                   <div class="field">
-                    <label class="label">رمز عبور فعلی</label>
+                    <label class="label"><span data-i18n="رمز عبور فعلی">رمز عبور فعلی</span></label>
                     <input id="currentPassword" class="input rtl" type="password" />
                   </div>
                   <div class="field">
-                    <label class="label">رمز عبور جدید</label>
+                    <label class="label"><span data-i18n="رمز عبور جدید">رمز عبور جدید</span></label>
                     <input id="newPassword" class="input rtl" type="password" />
                   </div>
                 </div>
-                <button id="changePasswordBtn" class="btn primary full"><i data-lucide="lock"></i> تغییر رمز عبور</button>
+                <button id="changePasswordBtn" class="btn primary full"><i data-lucide="lock"></i> <span data-i18n="تغییر رمز عبور">تغییر رمز عبور</span></button>
                 <p id="passwordMode" class="muted" style="margin-top:14px"></p>
               </div>
             </div>
 
             <div id="telegramPanel" class="panel">
               <div class="card">
-                <div class="card-title"><h2>اتصال ربات تلگرام</h2></div>
-                <p class="muted">توکن بات و شناسه عددی ادمین را وارد کنید. بعد از ذخیره، وبهوک، دکمه‌های ربات و لیست کامندها تنظیم می‌شوند. برای دکمه آبی Open کنار پروفایل ربات، همین آدرس مینی‌اپ را در BotFather بخش /myapps ثبت کنید.</p>
+                <div class="card-title"><h2><span data-i18n="اتصال ربات تلگرام">اتصال ربات تلگرام</span></h2></div>
+                <p class="muted"><span data-i18n="توکن بات و شناسه عددی ادمین را وارد کنید. بعد از ذخیره، وبهوک، دکمه‌های ربات و لیست کامندها تنظیم می‌شوند. برای دکمه آبی Open کنار پروفایل ربات، همین آدرس مینی‌اپ را در BotFather بخش /myapps ثبت کنید.">توکن بات و شناسه عددی ادمین را وارد کنید. بعد از ذخیره، وبهوک، دکمه‌های ربات و لیست کامندها تنظیم می‌شوند. برای دکمه آبی Open کنار پروفایل ربات، همین آدرس مینی‌اپ را در BotFather بخش /myapps ثبت کنید.</span></p>
                 <div class="grid2">
                   <div class="field">
-                    <label class="label">توکن بات تلگرام</label>
+                    <label class="label"><span data-i18n="توکن بات تلگرام">توکن بات تلگرام</span></label>
                     <input id="telegramBotToken" class="input ltr" placeholder="123456:ABC..." />
                   </div>
                   <div class="field">
-                    <label class="label">شناسه عددی ادمین</label>
-                    <input id="telegramAdminId" class="input ltr" placeholder="مثلاً 123456789" />
+                    <label class="label"><span data-i18n="شناسه عددی ادمین">شناسه عددی ادمین</span></label>
+                    <input id="telegramAdminId" class="input ltr" placeholder="مثلاً 123456789" data-i18n-placeholder="مثلاً 123456789" />
                   </div>
                 </div>
-                <div class="checks"><label><input id="telegramEnabled" type="checkbox" /> ربات فعال باشد</label></div>
+                <div class="checks"><label><input id="telegramEnabled" type="checkbox" /> <span data-i18n="ربات فعال باشد">ربات فعال باشد</span></label></div>
                 <div class="toolbar">
-                  <button id="saveTelegramBtn" class="btn primary"><i data-lucide="zap"></i> ذخیره و فعال‌سازی وبهوک</button>
-                  <button id="testTelegramBtn" class="btn"><i data-lucide="send"></i> ارسال پیام تست</button>
+                  <button id="saveTelegramBtn" class="btn primary"><i data-lucide="zap"></i> <span data-i18n="ذخیره و فعال‌سازی وبهوک">ذخیره و فعال‌سازی وبهوک</span></button>
+                  <button id="testTelegramBtn" class="btn"><i data-lucide="send"></i> <span data-i18n="ارسال پیام تست">ارسال پیام تست</span></button>
                 </div>
                 <div style="height:14px"></div>
-                <div class="label">آدرس وبهوک</div>
+                <div class="label"><span data-i18n="آدرس وبهوک">آدرس وبهوک</span></div>
                 <div id="telegramWebhook" class="code">-</div>
                 <div style="height:14px"></div>
-                <div class="label">آدرس مینی‌اپ</div>
+                <div class="label"><span data-i18n="آدرس مینی‌اپ">آدرس مینی‌اپ</span></div>
                 <div class="linkrow">
                   <div id="telegramMiniApp" class="code">-</div>
-                  <button id="copyMiniAppBtn" class="btn small"><i data-lucide="copy"></i> کپی</button>
+                  <button id="copyMiniAppBtn" class="btn small"><i data-lucide="copy"></i> <span data-i18n="کپی">کپی</span></button>
                 </div>
                 <div style="height:14px"></div>
                 <div class="card" style="background:rgba(3,8,20,.32)">
-                  <h3>نمونه دستورهای ربات</h3>
+                  <h3><span data-i18n="نمونه دستورهای ربات">نمونه دستورهای ربات</span></h3>
                   <p class="muted" style="direction:ltr;text-align:left;white-space:pre-line">/users
 /adduser mobile
 /setconfigs USER_ID
@@ -3416,6 +3521,181 @@ vless://...</p>
 
   <script>
     var $ = function(id) { return document.getElementById(id); };
+
+    var translations = {
+      "پنل مدیریت کانفیگ‌ها": "Config management panel",
+      "رمز عبور": "Password",
+      "ورود به پنل": "Sign in",
+      "مدیریت پیشرفته کانفیگ‌ها": "Advanced config management",
+      "کاربر ایجاد کنید، کانفیگ اختصاصی بدهید، تنظیمات گروهی اعمال کنید و ربات تلگرام را متصل کنید.": "Create users, manage their configs, apply bulk changes, and connect your Telegram bot.",
+      "بارگذاری مجدد": "Refresh",
+      "خروج": "Sign out",
+      "بخش‌ها": "Sections",
+      "کاربران": "Users",
+      "کانفیگ اختصاصی کاربر": "User configs",
+      "اعمال گروهی کانفیگ": "Bulk config update",
+      "امنیت و رمز عبور": "Security and password",
+      "ربات تلگرام": "Telegram bot",
+      "ایجاد کاربر": "Create user",
+      "نام کاربر": "User name",
+      "مثلاً موبایل، لپ‌تاپ، کاربر ۱": "e.g. Mobile, Laptop, User 1",
+      "کپی کانفیگ از کاربر دیگر (اختیاری)": "Copy configs from another user (optional)",
+      "آپلود فایل": "Upload file",
+      "پاک‌سازی": "Clean up",
+      "دانلود TXT": "Download TXT",
+      "بازیابی بکاپ": "Restore backup",
+      "ذخیره کانفیگ‌ها": "Save configs",
+      "انتخاب کاربر": "Select user",
+      "کاربر فعال باشد": "Enable user",
+      "ذخیره مشخصات": "Save details",
+      "ساخت توکن جدید": "Regenerate token",
+      "حذف کاربر": "Delete user",
+      "لینک Raw": "Raw link",
+      "کپی": "Copy",
+      "لینک Base64": "Base64 link",
+      "تست لینک Raw": "Test Raw link",
+      "کپی کانفیگ از کاربر دیگر": "Copy configs from another user",
+      "کانفیگ‌های کاربر منبع جایگزین می‌شوند. کانفیگ فعلی در بکاپ ذخیره می‌شود.": "The source user's configs will replace this user's configs. Current configs will be backed up.",
+      "کپی کانفیگ‌ها": "Copy configs",
+      "کل کانفیگ": "Total configs",
+      "شناخته‌شده": "Recognized",
+      "نامشخص": "Unknown",
+      "تکراری محتوایی": "Content duplicates",
+      "فایل را اینجا بکشید و رها کنید، یا روی «آپلود فایل» بزنید. متن فایل داخل باکس زیر نمایش داده می‌شود.": "Drop a file here or click Upload file. Its contents will appear in the box below.",
+      "حذف خطوط خالی و فاصله‌های اضافی": "Remove empty lines and extra whitespace",
+      "حذف کانفیگ‌های تکراری حتی با نام متفاوت": "Remove duplicate configs, including those with different names",
+      "در این بخش می‌توانید یک مجموعه کانفیگ را برای همه کاربران یا فقط کاربران انتخاب‌شده اعمال کنید. منبع کانفیگ می‌تواند متن، فایل یا کانفیگ‌های یک کاربر دیگر باشد.": "Apply configs to all users or selected users. Use text, a file, or another user's configs as the source.",
+      "نوع اعمال": "Update mode",
+      "جایگزینی کامل کانفیگ کاربران": "Replace all configs",
+      "افزودن به کانفیگ فعلی کاربران": "Append to existing configs",
+      "محدوده اعمال": "Apply to",
+      "همه کاربران": "All users",
+      "فقط کاربران انتخاب‌شده": "Selected users only",
+      "منبع کانفیگ": "Config source",
+      "متن / فایل": "Text / file",
+      "از کانفیگ‌های کاربر دیگر": "Another user's configs",
+      "کاربر منبع": "Source user",
+      "اعمال کانفیگ‌ها": "Apply configs",
+      "تغییر رمز عبور پنل": "Change panel password",
+      "رمز عبور فعلی": "Current password",
+      "رمز عبور جدید": "New password",
+      "تغییر رمز عبور": "Change password",
+      "اتصال ربات تلگرام": "Connect Telegram bot",
+      "توکن بات و شناسه عددی ادمین را وارد کنید. بعد از ذخیره، وبهوک، دکمه‌های ربات و لیست کامندها تنظیم می‌شوند. برای دکمه آبی Open کنار پروفایل ربات، همین آدرس مینی‌اپ را در BotFather بخش /myapps ثبت کنید.": "Enter the bot token and numeric admin ID. Saving configures the webhook, bot buttons, and commands. For the blue Open button on the bot profile, register this Mini App URL in BotFather under /myapps.",
+      "توکن بات تلگرام": "Telegram bot token",
+      "شناسه عددی ادمین": "Numeric admin ID",
+      "مثلاً 123456789": "e.g. 123456789",
+      "ربات فعال باشد": "Enable bot",
+      "ذخیره و فعال‌سازی وبهوک": "Save and activate webhook",
+      "ارسال پیام تست": "Send test message",
+      "آدرس وبهوک": "Webhook URL",
+      "آدرس مینی‌اپ": "Mini App URL",
+      "نمونه دستورهای ربات": "Example bot commands",
+      "ورود خودکار تلگرام انجام نشد.": "Telegram automatic sign-in failed.",
+      "پاسخ سرور نامعتبر است.": "Invalid server response.",
+      "درخواست ناموفق بود.": "Request failed.",
+      "رمز عبور اختصاصی برای پنل ثبت شده است.": "A custom panel password is set.",
+      "در حال حاضر رمز اولیه admin استفاده می‌شود.": "The default password admin is currently in use.",
+      "هنوز کاربری ایجاد نشده است.": "No users have been created yet.",
+      "فعال": "Enabled",
+      "غیرفعال": "Disabled",
+      "بدون کپی کانفیگ": "Do not copy configs",
+      "انتخاب کاربر منبع": "Select source user",
+      "کانفیگ فعلی و تغییرات ذخیره‌نشده با کانفیگ کاربر منبع جایگزین شوند؟": "Replace current configs and unsaved changes with the source user's configs?",
+      "رمز عبور را وارد کنید.": "Enter your password.",
+      "از پنل خارج شدید.": "You have signed out.",
+      "برای این کاربر توکن جدید ساخته شود؟ لینک قبلی از کار می‌افتد.": "Regenerate this user's token? The previous link will stop working.",
+      "این کاربر و کانفیگ‌های او حذف شود؟": "Delete this user and their configs?",
+      "متن پاک‌سازی شد.": "Text cleaned up.",
+      "آخرین بکاپ این کاربر بازیابی شود؟": "Restore this user's latest backup?",
+      "دانلود ناموفق بود.": "Download failed.",
+      "لینکی برای کپی وجود ندارد.": "There is no link to copy.",
+      "کپی شد.": "Copied.",
+      "حجم فایل بیشتر از ۵ مگابایت است.": "The file is larger than 5 MB.",
+      "محتوای فایل داخل باکس قرار گرفت.": "File contents loaded into the text box.",
+      "رمز عبور نادرست است.": "Incorrect password.",
+      "رمز عبور فعلی نادرست است.": "Incorrect current password.",
+      "رمز عبور جدید باید حداقل ۸ کاراکتر باشد.": "The new password must contain at least 8 characters.",
+      "رمز عبور با موفقیت تغییر کرد.": "Password changed successfully.",
+      "نام کاربر را وارد کنید.": "Enter a user name.",
+      "کاربر ایجاد شد.": "User created.",
+      "کاربر پیدا نشد.": "User not found.",
+      "نام کاربر نمی‌تواند خالی باشد.": "The user name cannot be empty.",
+      "اطلاعات کاربر ذخیره شد.": "User details saved.",
+      "کاربر حذف شد.": "User deleted.",
+      "کانفیگ‌های کاربر ذخیره شد.": "User configs saved.",
+      "کاربر منبع باید متفاوت باشد.": "The source user must be different.",
+      "کانفیگ‌ها از کاربر منبع کپی شدند.": "Configs copied from the source user.",
+      "برای این کاربر بکاپی وجود ندارد.": "No backup exists for this user.",
+      "آخرین بکاپ این کاربر بازیابی شد.": "This user's latest backup was restored.",
+      "حداقل یک کاربر را انتخاب کنید.": "Select at least one user.",
+      "کاربر منبع یافت نشد.": "Source user not found.",
+      "کاربر منبع فاقد کانفیگ است.": "The source user has no configs.",
+      "کانفیگ قابل اعمال وارد نشده است.": "Enter configs to apply.",
+      "کانفیگ‌ها برای کاربران انتخاب‌شده اعمال شد.": "Configs applied to the selected users.",
+      "توکن بات و شناسه عددی ادمین را وارد کنید.": "Enter the bot token and numeric admin ID.",
+      "تنظیمات تلگرام کامل یا فعال نیست.": "Telegram settings are incomplete or disabled.",
+      "پیام تست ارسال شد.": "Test message sent.",
+      "دسترسی غیرمجاز است.": "Unauthorized access.",
+      "خطای داخلی Worker": "Internal Worker error",
+      "حجم کانفیگ‌ها برای این پنل بیش از ۵ مگابایت است.": "Configs exceed the panel's 5 MB limit.",
+      "لیست کانفیگ خالی است.": "The config list is empty.",
+      "فایل معتبر نیست.": "Invalid file.",
+      "دریافت فایل از تلگرام ناموفق بود.": "Failed to retrieve the file from Telegram.",
+      "دانلود فایل از تلگرام ناموفق بود.": "Failed to download the file from Telegram.",
+      "توکن ذخیره شده": "Saved token",
+      "تغییر به تم روشن": "Switch to light theme",
+      "تغییر به تم تاریک": "Switch to dark theme",
+      "تنظیمات تلگرام ذخیره و وبهوک فعال شد.": "Telegram settings saved and webhook activated.",
+      "تنظیمات تلگرام ذخیره شد.": "Telegram settings saved."
+};
+    function readPreference(key, fallback) {
+      try { return localStorage.getItem(key) || fallback; } catch (e) { return fallback; }
+    }
+    function savePreference(key, value) {
+      try { localStorage.setItem(key, value); } catch (e) {}
+    }
+    var language = readPreference("config_pilot_language", "fa") === "en" ? "en" : "fa";
+    var theme = readPreference("config_pilot_theme", "dark") === "light" ? "light" : "dark";
+    function t(text) { return language === "en" ? (translations[text] || text) : text; }
+    function applyPreferences() {
+      document.documentElement.lang = language;
+      document.documentElement.dir = language === "fa" ? "rtl" : "ltr";
+      document.documentElement.dataset.theme = theme;
+      document.querySelectorAll("[data-i18n]").forEach(function(el) { el.textContent = t(el.dataset.i18n); });
+      document.querySelectorAll("[data-i18n-placeholder]").forEach(function(el) { el.placeholder = t(el.dataset.i18nPlaceholder); });
+      var languageBtn = $("languageToggle");
+      languageBtn.textContent = language === "fa" ? "🌐 EN" : "🌐 فا";
+      languageBtn.title = language === "fa" ? "Switch to English" : "تغییر زبان به فارسی";
+      languageBtn.setAttribute("aria-label", languageBtn.title);
+      var themeBtn = $("themeToggle");
+      themeBtn.innerHTML = '<i data-lucide="' + (theme === "light" ? "moon" : "sun") + '"></i>';
+      themeBtn.title = t(theme === "light" ? "تغییر به تم تاریک" : "تغییر به تم روشن");
+      themeBtn.setAttribute("aria-label", themeBtn.title);
+      if (typeof lucide !== "undefined") lucide.createIcons();
+      if (users) {
+        renderUsers();
+        renderCopySources();
+        $("passwordMode").textContent = t(adminPasswordChanged ? "رمز عبور اختصاصی برای پنل ثبت شده است." : "در حال حاضر رمز اولیه admin استفاده می‌شود.");
+      }
+      if (telegramWebApp) {
+        try {
+          telegramWebApp.setHeaderColor(theme === "light" ? "#f3f5fc" : "#070a12");
+          telegramWebApp.setBackgroundColor(theme === "light" ? "#f3f5fc" : "#070a12");
+        } catch (e) {}
+      }
+    }
+    $("languageToggle").addEventListener("click", function() {
+      language = language === "fa" ? "en" : "fa";
+      savePreference("config_pilot_language", language);
+      applyPreferences();
+    });
+    $("themeToggle").addEventListener("click", function() {
+      theme = theme === "dark" ? "light" : "dark";
+      savePreference("config_pilot_theme", theme);
+      applyPreferences();
+    });
+
     var storageKey = "sub_panel_admin_password";
     var isTelegramMiniAppPath = location.pathname.replace(/\\/$/, "") === "/tg-app";
     var telegramWebApp = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
@@ -3452,10 +3732,11 @@ vless://...</p>
 
     function showMiniAppAuthError(message) {
       showLogin();
-      $("passwordInput").placeholder = "رمز عبور";
-      toast(message || "ورود خودکار تلگرام انجام نشد.", "err");
+      $("passwordInput").placeholder = t("رمز عبور");
+      toast(message || t("ورود خودکار تلگرام انجام نشد."), "err");
     }
 
+    var adminPasswordChanged = false;
     var users = [];
     var currentUserId = "";
     var currentLinks = { raw: "", base64: "" };
@@ -3476,8 +3757,8 @@ vless://...</p>
 
       var res = await fetch(path, Object.assign({}, options, { headers: headers }));
       var data = null;
-      try { data = await res.json(); } catch (e) { data = { ok: false, error: "پاسخ سرور نامعتبر است." }; }
-      if (!res.ok || !data.ok) throw new Error(data.error || "درخواست ناموفق بود.");
+      try { data = await res.json(); } catch (e) { data = { ok: false, error: t("پاسخ سرور نامعتبر است.") }; }
+      if (!res.ok || !data.ok) throw new Error(data.error || t("درخواست ناموفق بود."));
       return data;
     }
 
@@ -3487,7 +3768,7 @@ vless://...</p>
     function toast(message, type) {
       var box = document.createElement("div");
       box.className = "toast-item " + (type === "err" ? "err" : "ok");
-      box.textContent = message;
+      box.textContent = t(message);
       $("toast").appendChild(box);
       setTimeout(function() { box.remove(); }, 4200);
     }
@@ -3509,11 +3790,19 @@ vless://...</p>
     async function refreshState() {
       var data = await api("/api/admin/state");
       users = data.users || [];
+      if (!users.some(function(user) { return user.id === currentUserId; })) currentUserId = users.length ? users[0].id : "";
+      if (!currentUserId) {
+        $("configsText").value = "";
+        $("editUserName").value = "";
+        setLinks(null);
+        updateStats();
+      }
       renderUsers();
       renderSelects();
       renderBulkUsers();
       renderTelegram(data.telegram || {});
-      $("passwordMode").textContent = data.adminPasswordChanged ? "رمز عبور اختصاصی برای پنل ثبت شده است." : "در حال حاضر رمز اولیه admin استفاده می‌شود.";
+      adminPasswordChanged = data.adminPasswordChanged;
+      $("passwordMode").textContent = adminPasswordChanged ? t("رمز عبور اختصاصی برای پنل ثبت شده است.") : t("در حال حاضر رمز اولیه admin استفاده می‌شود.");
       if (!currentUserId && users.length) currentUserId = users[0].id;
       if (currentUserId) await loadUserConfigs(currentUserId);
     }
@@ -3522,19 +3811,55 @@ vless://...</p>
       var box = $("usersList");
       box.innerHTML = "";
       if (!users.length) {
-        box.innerHTML = '<p class="muted">هنوز کاربری ایجاد نشده است.</p>';
+        box.innerHTML = '<p class="muted">' + t("هنوز کاربری ایجاد نشده است.") + '</p>';
         return;
       }
       users.forEach(function(user) {
         var item = document.createElement("div");
         item.className = "user-item" + (user.id === currentUserId ? " active" : "");
-        item.innerHTML = "<strong>" + escapeHtml(user.name) + "</strong><span>" + (user.enabled ? "فعال" : "غیرفعال") + " · " + user.id + "</span>";
+        item.innerHTML = "<strong>" + escapeHtml(user.name) + "</strong><span>" + (user.enabled ? t("فعال") : t("غیرفعال")) + " · " + user.id + "</span>";
         item.addEventListener("click", async function() { currentUserId = user.id; switchTab("configsPanel"); await loadUserConfigs(user.id); renderUsers(); renderSelects(); });
         box.appendChild(item);
       });
     }
 
+    function renderCopySources() {
+      ["newUserSource", "copySourceUser"].forEach(function(id) {
+        var select = $(id);
+        var previous = select.value;
+        select.replaceChildren(new Option(t(id === "newUserSource" ? "بدون کپی کانفیگ" : "انتخاب کاربر منبع"), ""));
+        users.forEach(function(user) {
+          if (id === "copySourceUser" && user.id === currentUserId) return;
+          select.add(new Option(user.name, user.id));
+        });
+        if (Array.from(select.options).some(function(opt) { return opt.value === previous; })) select.value = previous;
+        select.disabled = select.options.length === 1;
+      });
+      $("copyUserConfigsBtn").disabled = !currentUserId || !$("copySourceUser").value;
+    }
+
+    $("copySourceUser").addEventListener("change", function() {
+      $("copyUserConfigsBtn").disabled = !currentUserId || !this.value;
+    });
+    $("copyUserConfigsBtn").addEventListener("click", async function() {
+      var id = currentUserId;
+      var sourceUserId = $("copySourceUser").value;
+      if (!id || !sourceUserId) return;
+      if (!confirm(t("کانفیگ فعلی و تغییرات ذخیره‌نشده با کانفیگ کاربر منبع جایگزین شوند؟"))) return;
+      this.disabled = true;
+      try {
+        var data = await api("/api/admin/users/configs/copy", {
+          method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ id: id, sourceUserId: sourceUserId })
+        });
+        await refreshState();
+        toast(data.message);
+      } catch (err) { toast(err.message, "err"); }
+      finally { renderCopySources(); }
+    });
+
     function renderSelects() {
+      renderCopySources();
       var select = $("selectedUserSelect");
       select.innerHTML = "";
       users.forEach(function(user) {
@@ -3565,7 +3890,8 @@ vless://...</p>
     function renderTelegram(tg) {
       $("telegramEnabled").checked = tg.enabled === true;
       $("telegramAdminId").value = tg.adminChatId || "";
-      $("telegramBotToken").placeholder = tg.botTokenSaved ? "Saved token" : "123456:ABC...";
+      $("telegramBotToken").dataset.i18nPlaceholder = tg.botTokenSaved ? "توکن ذخیره شده" : "123456:ABC...";
+      $("telegramBotToken").placeholder = t($("telegramBotToken").dataset.i18nPlaceholder);
       $("telegramWebhook").textContent = tg.webhookUrl || "-";
       $("telegramMiniApp").textContent = tg.miniAppUrl || (location.origin + "/tg-app");
     }
@@ -3573,6 +3899,7 @@ vless://...</p>
     async function loadUserConfigs(id) {
       if (!id) return;
       currentUserId = id;
+      renderCopySources();
       var data = await api("/api/admin/users/configs?id=" + encodeURIComponent(id));
       var user = data.user;
       $("selectedUserSelect").value = user.id;
@@ -3645,7 +3972,7 @@ vless://...</p>
     $("loginForm").addEventListener("submit", async function(e) {
       e.preventDefault();
       var password = $("passwordInput").value.trim();
-      if (!password) return toast("رمز عبور را وارد کنید.", "err");
+      if (!password) return toast(t("رمز عبور را وارد کنید."), "err");
       try { await login(password); } catch (err) { clearPassword(); toast(err.message, "err"); }
     });
 
@@ -3663,8 +3990,9 @@ vless://...</p>
     $("createUserBtn").addEventListener("click", async function() {
       try {
         var name = $("newUserName").value.trim();
-        var data = await api("/api/admin/users/create", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: name }) });
+        var data = await api("/api/admin/users/create", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: name, sourceUserId: $("newUserSource").value }) });
         $("newUserName").value = "";
+        $("newUserSource").value = "";
         currentUserId = data.user.id;
         await refreshState();
         switchTab("configsPanel");
@@ -3684,7 +4012,7 @@ vless://...</p>
     });
 
     $("regenTokenBtn").addEventListener("click", async function() {
-      if (!confirm("برای این کاربر توکن جدید ساخته شود؟ لینک قبلی از کار می‌افتد.")) return;
+      if (!confirm(t("برای این کاربر توکن جدید ساخته شود؟ لینک قبلی از کار می‌افتد."))) return;
       try {
         var data = await api("/api/admin/users/update", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: currentUserId, regenerateToken: true }) });
         await refreshState();
@@ -3694,7 +4022,7 @@ vless://...</p>
 
     $("deleteUserBtn").addEventListener("click", async function() {
       if (!currentUserId) return;
-      if (!confirm("این کاربر و کانفیگ‌های او حذف شود؟")) return;
+      if (!confirm(t("این کاربر و کانفیگ‌های او حذف شود؟"))) return;
       try {
         var data = await api("/api/admin/users/delete", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: currentUserId }) });
         currentUserId = "";
@@ -3716,7 +4044,7 @@ vless://...</p>
     });
 
     $("restoreBtn").addEventListener("click", async function() {
-      if (!confirm("آخرین بکاپ این کاربر بازیابی شود؟")) return;
+      if (!confirm(t("آخرین بکاپ این کاربر بازیابی شود؟"))) return;
       try {
         var data = await api("/api/admin/users/configs/restore", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: currentUserId }) });
         $("configsText").value = data.configs || "";
@@ -3734,7 +4062,7 @@ vless://...</p>
           downloadHeaders["authorization"] = "Bearer " + getPassword();
         }
         var res = await fetch("/api/admin/download?id=" + encodeURIComponent(currentUserId), { headers: downloadHeaders });
-        if (!res.ok) throw new Error("دانلود ناموفق بود.");
+        if (!res.ok) throw new Error(t("دانلود ناموفق بود."));
         var blob = await res.blob();
         var url = URL.createObjectURL(blob);
         var a = document.createElement("a");
@@ -3749,7 +4077,7 @@ vless://...</p>
     $("openRawBtn").addEventListener("click", function() { if (currentLinks.raw) window.open(currentLinks.raw, "_blank", "noopener,noreferrer"); });
 
     async function copyText(text) {
-      if (!text) return toast("لینکی برای کپی وجود ندارد.", "err");
+      if (!text) return toast(t("لینکی برای کپی وجود ندارد."), "err");
       await navigator.clipboard.writeText(text);
       toast("کپی شد.");
     }
@@ -3762,7 +4090,7 @@ vless://...</p>
     });
 
     async function readFileIntoTextarea(file, textarea) {
-      if (file.size > 5 * 1024 * 1024) return toast("حجم فایل بیشتر از ۵ مگابایت است.", "err");
+      if (file.size > 5 * 1024 * 1024) return toast(t("حجم فایل بیشتر از ۵ مگابایت است."), "err");
       textarea.value = await file.text();
       updateStats();
       toast("محتوای فایل داخل باکس قرار گرفت.");
@@ -3866,6 +4194,8 @@ vless://...</p>
         setTimeout(resolve, ms);
       });
     }
+
+    applyPreferences();
 
     (async function boot() {
       if (isTelegramMiniAppPath) {
