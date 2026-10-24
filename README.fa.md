@@ -130,6 +130,7 @@ npm run deploy
 | Deploy command | `npm run deploy` |
 | متغیر ساخت `CONFIG_PILOT_KV_NAMESPACE_ID` | شناسهٔ namespace اختصاصی شما |
 | متغیر ساخت `CONFIG_PILOT_WORKER_NAME` | نام دقیق Worker موجود |
+| متغیر اختیاری ساخت `CONFIG_PILOT_WORKERS_DEV` | مقدار `false` برای حفظ غیرفعال بودن آدرس workers.dev در نصب دارای دامنهٔ اختصاصی |
 | متغیر اختیاری ساخت `PUBLIC_BASE_URL` | آدرس پایهٔ HTTPS عمومی |
 
 دستور `npm run configure` فایل محلی و نادیده‌گرفته‌شدهٔ `wrangler.toml` را از این مقادیر می‌سازد و بازنویسی می‌کند؛ رمز یا توکن API در آن نوشته نمی‌شود. **`ADMIN_PASSWORD` را به‌صورت Secret زمان اجرای Worker تنظیم کنید**؛ صرفاً متغیر Build کافی نیست. [توضیح تفاوت متغیرهای ساخت و اجرا](https://developers.cloudflare.com/workers/ci-cd/builds/configuration/).
@@ -147,6 +148,7 @@ npm run deploy
 | Secret | `CONFIG_PILOT_KV_NAMESPACE_ID` | شناسهٔ namespace، بدون نقل‌قول و فاصله |
 | Secret | `ADMIN_PASSWORD` | رمز اولیهٔ اختصاصی با حداقل ۸ کاراکتر |
 | Variable | `CONFIG_PILOT_WORKER_NAME` | نام Worker؛ پیش‌فرض `config-pilot` |
+| Variable | `CONFIG_PILOT_WORKERS_DEV` | اختیاری، `true` یا `false`؛ پیش‌فرض `true` |
 | Variable | `PUBLIC_BASE_URL` | آدرس پایهٔ HTTPS؛ اختیاری |
 | Variable | `DEPLOY_TO_CLOUDFLARE` | برای فعال شدن انتشار دقیقاً `true` |
 

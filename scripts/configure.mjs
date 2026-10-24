@@ -14,6 +14,12 @@ export function configFromEnv(template, env) {
   let config = template
     .replace('name = "config-pilot"', "name = " + JSON.stringify(name))
     .replace("REPLACE_WITH_YOUR_KV_NAMESPACE_ID", id);
+  if (env.CONFIG_PILOT_WORKERS_DEV) {
+    if (!["true", "false"].includes(env.CONFIG_PILOT_WORKERS_DEV)) {
+      throw new Error("CONFIG_PILOT_WORKERS_DEV must be true or false.");
+    }
+    config = config.replace("workers_dev = true", "workers_dev = " + env.CONFIG_PILOT_WORKERS_DEV);
+  }
   if (env.PUBLIC_BASE_URL) {
     let url;
     try { url = new URL(env.PUBLIC_BASE_URL); } catch { throw new Error("PUBLIC_BASE_URL must be an HTTPS origin."); }

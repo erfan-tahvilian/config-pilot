@@ -110,6 +110,7 @@ Use these project-specific settings:
 | Deploy command | `npm run deploy` |
 | Build variable `CONFIG_PILOT_KV_NAMESPACE_ID` | Your KV namespace ID |
 | Build variable `CONFIG_PILOT_WORKER_NAME` | Your existing Worker's exact name |
+| Optional build variable `CONFIG_PILOT_WORKERS_DEV` | `false` to keep the workers.dev endpoint disabled for a custom-domain installation |
 | Optional build variable `PUBLIC_BASE_URL` | Your public HTTPS origin |
 
 `npm run configure` generates the ignored `wrangler.toml` from these values. It overwrites that local generated file; it does not write passwords or API tokens. Set **`ADMIN_PASSWORD` as a runtime Secret** in the Worker settings, not merely as a build variable. [Build settings and runtime variables are separate](https://developers.cloudflare.com/workers/ci-cd/builds/configuration/).
@@ -127,6 +128,7 @@ In your repository, open **Settings → Secrets and variables → Actions**. Add
 | Secret | `CONFIG_PILOT_KV_NAMESPACE_ID` | Your namespace ID, with no quotes or spaces |
 | Secret | `ADMIN_PASSWORD` | Unique initial password, at least 8 characters |
 | Variable | `CONFIG_PILOT_WORKER_NAME` | Worker name; defaults to `config-pilot` |
+| Variable | `CONFIG_PILOT_WORKERS_DEV` | Optional `true`/`false`; defaults to `true` |
 | Variable | `PUBLIC_BASE_URL` | Optional HTTPS origin |
 | Variable | `DEPLOY_TO_CLOUDFLARE` | Set to the exact string `true` when ready |
 
