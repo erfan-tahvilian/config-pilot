@@ -538,7 +538,8 @@ export default {
 
         let webhookResult = null;
         if (settings.enabled) {
-          webhookResult = await configureTelegramEntryPoints(
+          const bot = await getTelegramBot(env, settings);
+          webhookResult = await bot.configureTelegramEntryPoints(
             settings,
             url.origin,
           );
@@ -566,12 +567,8 @@ export default {
             400,
           );
         }
-        const sent = await telegramSend(
-          settings.botToken,
-          settings.adminChatId,
-          "اتصال ربات تلگرام با موفقیت برقرار شد. از دکمه‌های زیر می‌توانید استفاده کنید.",
-          telegramReplyKeyboard(url.origin),
-        );
+        const bot = await getTelegramBot(env, settings);
+        const sent = await bot.sendTest(settings, url.origin);
         return jsonResponse({
           ok: true,
           message: "پیام تست ارسال شد.",
@@ -598,7 +595,8 @@ export default {
           });
         }
         const update = await readJson(request);
-        await handleTelegramUpdate(update, env, settings, url.origin);
+        const bot = await getTelegramBot(env, settings);
+        await bot.handleTelegramUpdate(update, env, settings, url.origin);
         return jsonResponse({ ok: true });
       }
 
@@ -1087,1584 +1085,1678 @@ function publicTelegramSettings(settings, url, env) {
   };
 }
 
-async function configureTelegramEntryPoints(settings, origin) {
-  const webhook = await setTelegramWebhook(settings, origin);
-  const commands = await setTelegramCommands(settings);
+function telegramLanguageKey(chatId) {
+  return "telegram_language:" + String(chatId);
+}
 
-  if (settings.botToken && settings.adminChatId) {
-    await telegramSend(
-      settings.botToken,
-      settings.adminChatId,
-      telegramStartText(settings.adminChatId),
-      telegramReplyKeyboard(origin),
-    );
+async function getTelegramBot(env, settings) {
+  const language = await env.CONFIGS_KV.get(telegramLanguageKey(settings.adminChatId));
+  return createTelegramBot(language === "en" ? "en" : "fa");
+}
+
+// Each webhook gets its own language closure, including its keyboards and command handlers.
+function createTelegramBot(language) {
+
+  function t(fa, en) { return language === "en" ? en : fa; }
+
+  function telegramLanguageKeyboard() {
+    return { inline_keyboard: [[
+      { text: (language === "fa" ? "✅ " : "") + "فارسی", callback_data: "tg:language:fa" },
+      { text: (language === "en" ? "✅ " : "") + "English", callback_data: "tg:language:en" },
+    ]] };
   }
 
-  return { webhook, commands };
-}
-
-async function setTelegramWebhook(settings, origin) {
-  const webhookUrl =
-    origin.replace(/\/$/, "") +
-    "/telegram/webhook/" +
-    encodeURIComponent(settings.webhookSecret);
-  const response = await fetch(
-    "https://api.telegram.org/bot" + settings.botToken + "/setWebhook",
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ url: webhookUrl, drop_pending_updates: true }),
-    },
-  );
-  return await response
-    .json()
-    .catch(() => ({ ok: false, description: "پاسخ تلگرام نامعتبر بود." }));
-}
-
-async function setTelegramMenuButton(settings, origin) {
-  const miniAppUrl = origin.replace(/\/$/, "") + "/tg-app";
-  const response = await fetch(
-    "https://api.telegram.org/bot" + settings.botToken + "/setChatMenuButton",
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        chat_id: settings.adminChatId,
-        menu_button: {
-          type: "web_app",
-          text: "پنل مدیریت",
-          web_app: { url: miniAppUrl },
-        },
-      }),
-    },
-  );
-  return await response
-    .json()
-    .catch(() => ({ ok: false, description: "پاسخ تلگرام نامعتبر بود." }));
-}
-
-async function setTelegramCommands(settings) {
-  const commands = [
-    { command: "start", description: "شروع و نمایش منوی اصلی" },
-    { command: "id", description: "نمایش شناسه عددی تلگرام ادمین" },
-    { command: "users", description: "نمایش و مدیریت کاربران" },
-    { command: "newuser", description: "ایجاد کاربر جدید" },
-    { command: "bulk", description: "اعمال گروهی کانفیگ" },
-    { command: "file", description: "راهنمای ارسال کانفیگ با فایل" },
-    { command: "commands", description: "نمایش لیست کامل دستورها" },
-    { command: "help", description: "راهنمای کامل ربات" },
-    { command: "cancel", description: "لغو عملیات جاری" },
-    { command: "setconfigs", description: "جایگزینی کانفیگ یک کاربر" },
-    { command: "appendconfigs", description: "افزودن کانفیگ به یک کاربر" },
-    { command: "apply_all", description: "جایگزینی کانفیگ همه کاربران" },
-    { command: "append_all", description: "افزودن کانفیگ به همه کاربران" },
-    { command: "apply_users", description: "جایگزینی کانفیگ چند کاربر" },
-    { command: "append_users", description: "افزودن کانفیگ چند کاربر" },
-    { command: "password", description: "تغییر رمز عبور پنل" },
-    { command: "webhook", description: "تنظیم مجدد وبهوک و دستورها" },
-  ];
-
-  const scopes = [{ type: "default" }, { type: "all_private_chats" }];
-
-  if (settings.adminChatId) {
-    scopes.push({
-      type: "chat",
-      chat_id: Number(settings.adminChatId) || settings.adminChatId,
-    });
+  async function changeLanguage(selected, env, settings, chatId, origin) {
+    language = selected;
+    await env.CONFIGS_KV.put(telegramLanguageKey(settings.adminChatId), language);
+    await setTelegramCommands(settings);
+    await telegramSend(settings.botToken, chatId,
+      t("زبان ربات به فارسی تغییر کرد.", "Bot language changed to English."),
+      telegramReplyKeyboard(origin));
   }
 
-  const results = [];
-  for (const scope of scopes) {
+  async function sendTest(settings, origin) {
+    return telegramSend(settings.botToken, settings.adminChatId,
+      t("اتصال ربات تلگرام با موفقیت برقرار شد. از دکمه‌های زیر می‌توانید استفاده کنید.",
+        "Telegram bot connected successfully. Use the buttons below."),
+      telegramReplyKeyboard(origin));
+  }
+
+  async function handleTelegramUpdate(update, env, settings, origin) {
+    try {
+      return await processTelegramUpdate(update, env, settings, origin);
+    } catch (error) {
+      const message = update.message || update.edited_message || (update.callback_query && update.callback_query.message);
+      const chatId = message && message.chat ? String(message.chat.id) : "";
+      if (chatId !== String(settings.adminChatId)) throw error;
+      const errors = {
+        "لیست کانفیگ خالی است.": t("لیست کانفیگ خالی است.", "The config list is empty."),
+        "حجم کانفیگ‌ها برای این پنل بیش از ۵ مگابایت است.": t("حجم کانفیگ‌ها برای این پنل بیش از ۵ مگابایت است.", "Configs exceed the panel's 5 MB limit."),
+        "فایل معتبر نیست.": t("فایل معتبر نیست.", "Invalid file."),
+        "حجم فایل بیشتر از ۵ مگابایت است.": t("حجم فایل بیشتر از ۵ مگابایت است.", "The file is larger than 5 MB."),
+        "دریافت فایل از تلگرام ناموفق بود.": t("دریافت فایل از تلگرام ناموفق بود.", "Failed to retrieve the file from Telegram."),
+        "دانلود فایل از تلگرام ناموفق بود.": t("دانلود فایل از تلگرام ناموفق بود.", "Failed to download the file from Telegram."),
+      };
+      const known = errors[error.message];
+      // Network/unknown failures must remain retryable by Telegram.
+      if (!known && ![400, 413, 502].includes(error.status)) throw error;
+      return telegramSend(settings.botToken, chatId,
+        known || error.message, telegramInlineKeyboard(origin));
+    }
+  }
+
+  async function configureTelegramEntryPoints(settings, origin) {
+    const webhook = await setTelegramWebhook(settings, origin);
+    const commands = await setTelegramCommands(settings);
+
+    if (settings.botToken && settings.adminChatId) {
+      await telegramSend(
+        settings.botToken,
+        settings.adminChatId,
+        telegramStartText(settings.adminChatId),
+        telegramReplyKeyboard(origin),
+      );
+    }
+
+    return { webhook, commands };
+  }
+
+  async function setTelegramWebhook(settings, origin) {
+    const webhookUrl =
+      origin.replace(/\/$/, "") +
+      "/telegram/webhook/" +
+      encodeURIComponent(settings.webhookSecret);
     const response = await fetch(
-      "https://api.telegram.org/bot" + settings.botToken + "/setMyCommands",
+      "https://api.telegram.org/bot" + settings.botToken + "/setWebhook",
       {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ commands, scope }),
+        body: JSON.stringify({ url: webhookUrl, drop_pending_updates: true }),
       },
     );
-    results.push(
-      await response
-        .json()
-        .catch(() => ({ ok: false, description: "پاسخ تلگرام نامعتبر بود." })),
+    return await response
+      .json()
+      .catch(() => ({ ok: false, description: t("پاسخ تلگرام نامعتبر بود.", "Invalid Telegram response.") }));
+  }
+
+  async function setTelegramMenuButton(settings, origin) {
+    const miniAppUrl = origin.replace(/\/$/, "") + "/tg-app";
+    const response = await fetch(
+      "https://api.telegram.org/bot" + settings.botToken + "/setChatMenuButton",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          chat_id: settings.adminChatId,
+          menu_button: {
+            type: "web_app",
+            text: t("پنل مدیریت", "Admin panel"),
+            web_app: { url: miniAppUrl },
+          },
+        }),
+      },
     );
+    return await response
+      .json()
+      .catch(() => ({ ok: false, description: t("پاسخ تلگرام نامعتبر بود.", "Invalid Telegram response.") }));
   }
 
-  return results;
-}
+  async function setTelegramCommands(settings) {
+    const commands = [
+      { command: "language", description: t("تغییر زبان فارسی / انگلیسی", "Change language: Persian / English") },
+      { command: "start", description: t("شروع و نمایش منوی اصلی", "Start and show main menu") },
+      { command: "id", description: t("نمایش شناسه عددی تلگرام ادمین", "Show the admin's numeric Telegram ID") },
+      { command: "users", description: t("نمایش و مدیریت کاربران", "View and manage users") },
+      { command: "newuser", description: t("ایجاد کاربر جدید", "Create a new user") },
+      { command: "bulk", description: t("اعمال گروهی کانفیگ", "Bulk config update") },
+      { command: "file", description: t("راهنمای ارسال کانفیگ با فایل", "Help with uploading config files") },
+      { command: "commands", description: t("نمایش لیست کامل دستورها", "Show all commands") },
+      { command: "help", description: t("راهنمای کامل ربات", "Bot help") },
+      { command: "cancel", description: t("لغو عملیات جاری", "Cancel the current operation") },
+      { command: "setconfigs", description: t("جایگزینی کانفیگ یک کاربر", "Replace a user's configs") },
+      { command: "appendconfigs", description: t("افزودن کانفیگ به یک کاربر", "Append configs to a user") },
+      { command: "apply_all", description: t("جایگزینی کانفیگ همه کاربران", "Replace all users' configs") },
+      { command: "append_all", description: t("افزودن کانفیگ به همه کاربران", "Append configs to all users") },
+      { command: "apply_users", description: t("جایگزینی کانفیگ چند کاربر", "Replace selected users' configs") },
+      { command: "append_users", description: t("افزودن کانفیگ چند کاربر", "Append configs to selected users") },
+      { command: "password", description: t("تغییر رمز عبور پنل", "Change panel password") },
+      { command: "webhook", description: t("تنظیم مجدد وبهوک و دستورها", "Reset webhook and commands") },
+    ];
 
-async function telegramSend(botToken, chatId, text, replyMarkup = null) {
-  const payload = {
-    chat_id: chatId,
-    text,
-    parse_mode: "HTML",
-    disable_web_page_preview: true,
-  };
+    const scopes = [{ type: "default" }, { type: "all_private_chats" }];
 
-  if (replyMarkup) {
-    payload.reply_markup = replyMarkup;
+    if (settings.adminChatId) {
+      scopes.push({
+        type: "chat",
+        chat_id: Number(settings.adminChatId) || settings.adminChatId,
+      });
+    }
+
+    const results = [];
+    for (const scope of scopes) {
+      const response = await fetch(
+        "https://api.telegram.org/bot" + settings.botToken + "/setMyCommands",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ commands, scope }),
+        },
+      );
+      results.push(
+        await response
+          .json()
+          .catch(() => ({ ok: false, description: t("پاسخ تلگرام نامعتبر بود.", "Invalid Telegram response.") })),
+      );
+    }
+
+    return results;
   }
 
-  const response = await fetch(
-    "https://api.telegram.org/bot" + botToken + "/sendMessage",
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(payload),
-    },
-  );
-  return await response.json().catch(() => ({ ok: false }));
-}
+  async function telegramSend(botToken, chatId, text, replyMarkup = null) {
+    const payload = {
+      chat_id: chatId,
+      text,
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+    };
 
-async function telegramEditMessage(
-  botToken,
-  chatId,
-  messageId,
-  text,
-  replyMarkup = null,
-) {
-  if (!messageId) {
-    return telegramSend(botToken, chatId, text, replyMarkup);
+    if (replyMarkup) {
+      payload.reply_markup = replyMarkup;
+    }
+
+    const response = await fetch(
+      "https://api.telegram.org/bot" + botToken + "/sendMessage",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      },
+    );
+    return await response.json().catch(() => ({ ok: false }));
   }
 
-  const payload = {
-    chat_id: chatId,
-    message_id: messageId,
-    text,
-    parse_mode: "HTML",
-    disable_web_page_preview: true,
-  };
-
-  if (replyMarkup) {
-    payload.reply_markup = replyMarkup;
-  }
-
-  const response = await fetch(
-    "https://api.telegram.org/bot" + botToken + "/editMessageText",
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(payload),
-    },
-  );
-
-  const result = await response.json().catch(() => ({ ok: false }));
-
-  if (
-    !result.ok &&
-    String(result.description || "").includes("message is not modified")
-  ) {
-    return { ok: true, unchanged: true };
-  }
-
-  return result;
-}
-
-async function telegramEditCallbackMessage(
-  callbackQuery,
-  settings,
-  chatId,
-  text,
-  replyMarkup = null,
-) {
-  const messageId =
-    callbackQuery && callbackQuery.message
-      ? callbackQuery.message.message_id
-      : null;
-  const result = await telegramEditMessage(
-    settings.botToken,
+  async function telegramEditMessage(
+    botToken,
     chatId,
     messageId,
     text,
-    replyMarkup,
-  );
-
-  if (!result || result.ok !== true) {
-    return telegramSend(settings.botToken, chatId, text, replyMarkup);
-  }
-
-  return result;
-}
-
-async function telegramStateReply(
-  botToken,
-  chatId,
-  state,
-  text,
-  replyMarkup = null,
-) {
-  if (state && state.messageId) {
-    const result = await telegramEditMessage(
-      botToken,
-      chatId,
-      state.messageId,
-      text,
-      replyMarkup,
-    );
-    if (result && result.ok === true) return result;
-  }
-  return telegramSend(botToken, chatId, text, replyMarkup);
-}
-
-async function telegramAnswerCallback(botToken, callbackQueryId, text = "") {
-  const response = await fetch(
-    "https://api.telegram.org/bot" + botToken + "/answerCallbackQuery",
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ callback_query_id: callbackQueryId, text }),
-    },
-  );
-  return await response.json().catch(() => ({ ok: false }));
-}
-
-function telegramReplyKeyboard(origin) {
-  return {
-    keyboard: [
-      [{ text: "👥 کاربران" }, { text: "➕ افزودن کاربر" }],
-      [{ text: "📦 اعمال گروهی" }, { text: "📄 ارسال فایل" }],
-      [{ text: "🔐 تغییر رمز" }, { text: "📋 لیست دستورات" }],
-      [{ text: "❓ راهنما" }, { text: "❌ لغو" }],
-    ],
-    resize_keyboard: true,
-    is_persistent: false,
-  };
-}
-
-function telegramInlineKeyboard(origin) {
-  return {
-    inline_keyboard: [
-      [
-        { text: "👥 مدیریت کاربران", callback_data: "tg:users" },
-        { text: "➕ افزودن کاربر", callback_data: "tg:create_user" },
-      ],
-      [
-        { text: "📦 اعمال گروهی", callback_data: "tg:bulk_menu" },
-        { text: "🔐 تغییر رمز", callback_data: "tg:password" },
-      ],
-      [
-        { text: "📄 ارسال فایل", callback_data: "tg:file_help" },
-        { text: "📋 دستورات", callback_data: "tg:commands" },
-      ],
-      [{ text: "❓ راهنما", callback_data: "tg:help" }],
-    ],
-  };
-}
-
-function telegramUsersKeyboard(users) {
-  const rows = users.slice(0, 30).map((user) => [
-    {
-      text: (user.enabled !== false ? "🟢 " : "🔴 ") + user.name,
-      callback_data: "tg:user:" + user.id,
-    },
-  ]);
-  rows.push([{ text: "➕ افزودن کاربر", callback_data: "tg:create_user" }]);
-  rows.push([{ text: "بازگشت", callback_data: "tg:home" }]);
-  return { inline_keyboard: rows };
-}
-
-function telegramUserActionsKeyboard(user, origin) {
-  return {
-    inline_keyboard: [
-      [
-        {
-          text: "🔗 لینک‌های کانفیگ",
-          callback_data: "tg:user_links:" + user.id,
-        },
-      ],
-      [
-        { text: "📝 جایگزینی کانفیگ", callback_data: "tg:user_set:" + user.id },
-        {
-          text: "➕ افزودن کانفیگ",
-          callback_data: "tg:user_append:" + user.id,
-        },
-      ],
-      [
-        {
-          text: "📊 خلاصه کانفیگ",
-          callback_data: "tg:user_summary:" + user.id,
-        },
-        { text: "✏️ تغییر نام", callback_data: "tg:user_rename:" + user.id },
-      ],
-      [
-        {
-          text: user.enabled !== false ? "🔴 غیرفعال‌سازی" : "🟢 فعال‌سازی",
-          callback_data: "tg:user_toggle:" + user.id,
-        },
-        {
-          text: "♻️ توکن جدید",
-          callback_data: "tg:user_regen_confirm:" + user.id,
-        },
-      ],
-      [
-        { text: "🗑 حذف", callback_data: "tg:user_delete_confirm:" + user.id },
-        { text: "👥 کاربران", callback_data: "tg:users" },
-      ],
-    ],
-  };
-}
-
-function telegramConfirmKeyboard(action, id, backData = "tg:users") {
-  return {
-    inline_keyboard: [
-      [
-        { text: "✅ تأیید", callback_data: action + ":" + id },
-        { text: "انصراف", callback_data: backData },
-      ],
-    ],
-  };
-}
-
-function telegramBulkModeKeyboard() {
-  return {
-    inline_keyboard: [
-      [
-        { text: "جایگزینی برای همه", callback_data: "tg:bulk_all:replace" },
-        { text: "افزودن برای همه", callback_data: "tg:bulk_all:append" },
-      ],
-      [
-        {
-          text: "انتخاب کاربران برای جایگزینی",
-          callback_data: "tg:bulk_select:replace",
-        },
-        {
-          text: "انتخاب کاربران برای افزودن",
-          callback_data: "tg:bulk_select:append",
-        },
-      ],
-      [{ text: "بازگشت", callback_data: "tg:home" }],
-    ],
-  };
-}
-
-function telegramBulkSelectKeyboard(users, selectedIds = []) {
-  const selected = new Set(selectedIds);
-  const rows = users.slice(0, 30).map((user) => [
-    {
-      text: (selected.has(user.id) ? "✅ " : "✖️ ") + user.name,
-      callback_data: "tg:bulk_toggle:" + user.id,
-    },
-  ]);
-  rows.push([
-    {
-      text: "ادامه و ارسال کانفیگ",
-      callback_data: "tg:bulk_selected_continue",
-    },
-  ]);
-  rows.push([{ text: "انصراف", callback_data: "tg:bulk_menu" }]);
-  return { inline_keyboard: rows };
-}
-function telegramControlMessageKey(chatId) {
-  return TELEGRAM_CONTROL_MESSAGE_PREFIX + chatId;
-}
-
-async function getTelegramControlMessageId(env, chatId) {
-  return await env.CONFIGS_KV.get(telegramControlMessageKey(chatId));
-}
-
-async function setTelegramControlMessageId(env, chatId, messageId) {
-  if (messageId) {
-    await env.CONFIGS_KV.put(
-      telegramControlMessageKey(chatId),
-      String(messageId),
-      { expirationTtl: 172800 },
-    );
-  }
-}
-
-async function telegramControlMessage(
-  botToken,
-  chatId,
-  text,
-  replyMarkup,
-  env,
-) {
-  const oldMessageId = env
-    ? await getTelegramControlMessageId(env, chatId)
-    : null;
-
-  if (oldMessageId) {
-    const edited = await telegramEditMessage(
-      botToken,
-      chatId,
-      oldMessageId,
-      text,
-      replyMarkup,
-    );
-    if (edited && edited.ok) {
-      return edited;
+    replyMarkup = null,
+  ) {
+    if (!messageId) {
+      return telegramSend(botToken, chatId, text, replyMarkup);
     }
-  }
 
-  const sent = await telegramSend(botToken, chatId, text, replyMarkup);
-  if (env && sent && sent.ok && sent.result && sent.result.message_id) {
-    await setTelegramControlMessageId(env, chatId, sent.result.message_id);
-  }
-  return sent;
-}
-
-async function handleTelegramUpdate(update, env, settings, origin) {
-  if (update.callback_query) {
-    await handleTelegramCallback(update.callback_query, env, settings, origin);
-    return;
-  }
-
-  const message = update.message || update.edited_message || null;
-  if (!message || !message.chat) return;
-
-  const chatId = String(message.chat.id);
-  if (!constantTimeEqual(chatId, String(settings.adminChatId || ""))) {
-    if (settings.botToken) {
-      await telegramSend(settings.botToken, chatId, "دسترسی شما مجاز نیست.");
-    }
-    return;
-  }
-
-  const state = await getTelegramState(env, chatId);
-
-  if (message.document) {
-    const caption = normalizeTelegramText(String(message.caption || "").trim());
-    const reply = await handleTelegramConfigDocument(
-      message.document,
-      caption,
-      state,
-      chatId,
-      env,
-      settings,
-      origin,
-    );
-    await telegramStateReply(
-      settings.botToken,
-      chatId,
-      state,
-      reply,
-      telegramInlineKeyboard(origin),
-    );
-    return;
-  }
-
-  if (typeof message.text !== "string") {
-    await telegramSend(
-      settings.botToken,
-      chatId,
-      "این پیام قابل پردازش نیست. برای ارسال کانفیگ با فایل، دکمه «📄 ارسال فایل» را بزنید.",
-      telegramReplyKeyboard(origin),
-    );
-    return;
-  }
-
-  const text = normalizeTelegramText(message.text.trim());
-
-  if (text === "/cancel") {
-    const activeState = await getTelegramState(env, chatId);
-    await clearTelegramState(env, chatId);
-    await telegramStateReply(
-      settings.botToken,
-      chatId,
-      activeState,
-      "عملیات جاری لغو شد.",
-      telegramInlineKeyboard(origin),
-    );
-    return;
-  }
-
-  if (state && !text.startsWith("/")) {
-    const reply = await handleTelegramStateInput(
+    const payload = {
+      chat_id: chatId,
+      message_id: messageId,
       text,
-      state,
-      chatId,
-      env,
-      settings,
-      origin,
-    );
-    await telegramStateReply(
-      settings.botToken,
-      chatId,
-      state,
-      reply,
-      telegramInlineKeyboard(origin),
-    );
-    return;
-  }
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+    };
 
-  if (text === "/users") {
-    const users = await getUsers(env);
-    await telegramControlMessage(
-      settings.botToken,
-      chatId,
-      users.length
-        ? "کاربر مورد نظر را انتخاب کنید:"
-        : "هنوز کاربری ایجاد نشده است.",
-      users.length
-        ? telegramUsersKeyboard(users)
-        : telegramInlineKeyboard(origin),
-      env,
-    );
-    return;
-  }
+    if (replyMarkup) {
+      payload.reply_markup = replyMarkup;
+    }
 
-  if (text === "/bulk") {
-    await telegramControlMessage(
-      settings.botToken,
-      chatId,
-      "نوع اعمال گروهی را انتخاب کنید:",
-      telegramBulkModeKeyboard(),
-      env,
+    const response = await fetch(
+      "https://api.telegram.org/bot" + botToken + "/editMessageText",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      },
     );
-    return;
-  }
 
-  if (text === "/newuser") {
-    await setTelegramState(env, chatId, { action: "create_user" });
-    const sentNewUser = await telegramControlMessage(
-      settings.botToken,
-      chatId,
-      "نام کاربر جدید را ارسال کنید.\nبرای لغو، /cancel را بزنید.",
-      telegramInlineKeyboard(origin),
-      env,
-    );
-    if (sentNewUser && sentNewUser.result && sentNewUser.result.message_id)
-      await setTelegramState(env, chatId, {
-        action: "create_user",
-        messageId: sentNewUser.result.message_id,
-      });
-    return;
-  }
+    const result = await response.json().catch(() => ({ ok: false }));
 
-  if (text === "/password_change") {
-    await setTelegramState(env, chatId, { action: "change_password" });
-    const sentPass = await telegramControlMessage(
-      settings.botToken,
-      chatId,
-      "رمز عبور جدید پنل را ارسال کنید. حداقل ۸ کاراکتر.\nبرای لغو، /cancel را بزنید.",
-      telegramInlineKeyboard(origin),
-      env,
-    );
-    if (sentPass && sentPass.result && sentPass.result.message_id)
-      await setTelegramState(env, chatId, {
-        action: "change_password",
-        messageId: sentPass.result.message_id,
-      });
-    return;
-  }
-
-  const reply = await runTelegramCommand(text, env, origin, settings);
-  const markup = shouldShowTelegramInlineKeyboard(text)
-    ? telegramInlineKeyboard(origin)
-    : telegramReplyKeyboard(origin);
-
-  if (text === "/start") {
-    const sentStart = await telegramSend(
-      settings.botToken,
-      chatId,
-      reply,
-      telegramInlineKeyboard(origin),
-    );
     if (
-      sentStart &&
-      sentStart.ok &&
-      sentStart.result &&
-      sentStart.result.message_id
+      !result.ok &&
+      String(result.description || "").includes("message is not modified")
     ) {
-      await setTelegramControlMessageId(
-        env,
+      return { ok: true, unchanged: true };
+    }
+
+    return result;
+  }
+
+  async function telegramEditCallbackMessage(
+    callbackQuery,
+    settings,
+    chatId,
+    text,
+    replyMarkup = null,
+  ) {
+    const messageId =
+      callbackQuery && callbackQuery.message
+        ? callbackQuery.message.message_id
+        : null;
+    const result = await telegramEditMessage(
+      settings.botToken,
+      chatId,
+      messageId,
+      text,
+      replyMarkup,
+    );
+
+    if (!result || result.ok !== true) {
+      return telegramSend(settings.botToken, chatId, text, replyMarkup);
+    }
+
+    return result;
+  }
+
+  async function telegramStateReply(
+    botToken,
+    chatId,
+    state,
+    text,
+    replyMarkup = null,
+  ) {
+    if (state && state.messageId) {
+      const result = await telegramEditMessage(
+        botToken,
         chatId,
-        sentStart.result.message_id,
+        state.messageId,
+        text,
+        replyMarkup,
+      );
+      if (result && result.ok === true) return result;
+    }
+    return telegramSend(botToken, chatId, text, replyMarkup);
+  }
+
+  async function telegramAnswerCallback(botToken, callbackQueryId, text = "") {
+    const response = await fetch(
+      "https://api.telegram.org/bot" + botToken + "/answerCallbackQuery",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ callback_query_id: callbackQueryId, text }),
+      },
+    );
+    return await response.json().catch(() => ({ ok: false }));
+  }
+
+  function telegramReplyKeyboard(origin) {
+    return {
+      keyboard: [
+        [{ text: t("👥 کاربران", "👥 Users") }, { text: t("➕ افزودن کاربر", "➕ Add user") }],
+        [{ text: t("📦 اعمال گروهی", "📦 Bulk update") }, { text: t("📄 ارسال فایل", "📄 Upload file") }],
+        [{ text: t("🔐 تغییر رمز", "🔐 Change password") }, { text: t("📋 لیست دستورات", "📋 Command list") }],
+        [{ text: t("❓ راهنما", "❓ Help") }, { text: t("❌ لغو", "❌ Cancel") }],
+        [{ text: "🌐 زبان / Language" }],
+      ],
+      resize_keyboard: true,
+      is_persistent: false,
+    };
+  }
+
+  function telegramInlineKeyboard(origin) {
+    return {
+      inline_keyboard: [
+        [
+          { text: t("👥 مدیریت کاربران", "👥 Manage users"), callback_data: "tg:users" },
+          { text: t("➕ افزودن کاربر", "➕ Add user"), callback_data: "tg:create_user" },
+        ],
+        [
+          { text: t("📦 اعمال گروهی", "📦 Bulk update"), callback_data: "tg:bulk_menu" },
+          { text: t("🔐 تغییر رمز", "🔐 Change password"), callback_data: "tg:password" },
+        ],
+        [
+          { text: t("📄 ارسال فایل", "📄 Upload file"), callback_data: "tg:file_help" },
+          { text: t("📋 دستورات", "📋 Commands"), callback_data: "tg:commands" },
+        ],
+        [{ text: t("❓ راهنما", "❓ Help"), callback_data: "tg:help" }],
+        [{ text: "🌐 زبان / Language", callback_data: "tg:language" }],
+      ],
+    };
+  }
+
+  function telegramUsersKeyboard(users) {
+    const rows = users.slice(0, 30).map((user) => [
+      {
+        text: (user.enabled !== false ? "🟢 " : "🔴 ") + user.name,
+        callback_data: "tg:user:" + user.id,
+      },
+    ]);
+    rows.push([{ text: t("➕ افزودن کاربر", "➕ Add user"), callback_data: "tg:create_user" }]);
+    rows.push([{ text: t("بازگشت", "Back"), callback_data: "tg:home" }]);
+    return { inline_keyboard: rows };
+  }
+
+  function telegramUserActionsKeyboard(user, origin) {
+    return {
+      inline_keyboard: [
+        [
+          {
+            text: t("🔗 لینک‌های کانفیگ", "🔗 Config links"),
+            callback_data: "tg:user_links:" + user.id,
+          },
+        ],
+        [
+          { text: t("📝 جایگزینی کانفیگ", "📝 Replace configs"), callback_data: "tg:user_set:" + user.id },
+          {
+            text: t("➕ افزودن کانفیگ", "➕ Append configs"),
+            callback_data: "tg:user_append:" + user.id,
+          },
+        ],
+        [
+          {
+            text: t("📊 خلاصه کانفیگ", "📊 Config summary"),
+            callback_data: "tg:user_summary:" + user.id,
+          },
+          { text: t("✏️ تغییر نام", "✏️ Rename"), callback_data: "tg:user_rename:" + user.id },
+        ],
+        [
+          {
+            text: user.enabled !== false ? t("🔴 غیرفعال‌سازی", "🔴 Disable") : t("🟢 فعال‌سازی", "🟢 Enable"),
+            callback_data: "tg:user_toggle:" + user.id,
+          },
+          {
+            text: t("♻️ توکن جدید", "♻️ New token"),
+            callback_data: "tg:user_regen_confirm:" + user.id,
+          },
+        ],
+        [
+          { text: t("🗑 حذف", "🗑 Delete"), callback_data: "tg:user_delete_confirm:" + user.id },
+          { text: t("👥 کاربران", "👥 Users"), callback_data: "tg:users" },
+        ],
+      ],
+    };
+  }
+
+  function telegramConfirmKeyboard(action, id, backData = "tg:users") {
+    return {
+      inline_keyboard: [
+        [
+          { text: t("✅ تأیید", "✅ Confirm"), callback_data: action + ":" + id },
+          { text: t("انصراف", "Cancel"), callback_data: backData },
+        ],
+      ],
+    };
+  }
+
+  function telegramBulkModeKeyboard() {
+    return {
+      inline_keyboard: [
+        [
+          { text: t("جایگزینی برای همه", "Replace for all"), callback_data: "tg:bulk_all:replace" },
+          { text: t("افزودن برای همه", "Append for all"), callback_data: "tg:bulk_all:append" },
+        ],
+        [
+          {
+            text: t("انتخاب کاربران برای جایگزینی", "Select users to replace"),
+            callback_data: "tg:bulk_select:replace",
+          },
+          {
+            text: t("انتخاب کاربران برای افزودن", "Select users to append"),
+            callback_data: "tg:bulk_select:append",
+          },
+        ],
+        [{ text: t("بازگشت", "Back"), callback_data: "tg:home" }],
+      ],
+    };
+  }
+
+  function telegramBulkSelectKeyboard(users, selectedIds = []) {
+    const selected = new Set(selectedIds);
+    const rows = users.slice(0, 30).map((user) => [
+      {
+        text: (selected.has(user.id) ? "✅ " : "✖️ ") + user.name,
+        callback_data: "tg:bulk_toggle:" + user.id,
+      },
+    ]);
+    rows.push([
+      {
+        text: t("ادامه و ارسال کانفیگ", "Continue and send configs"),
+        callback_data: "tg:bulk_selected_continue",
+      },
+    ]);
+    rows.push([{ text: t("انصراف", "Cancel"), callback_data: "tg:bulk_menu" }]);
+    return { inline_keyboard: rows };
+  }
+  function telegramControlMessageKey(chatId) {
+    return TELEGRAM_CONTROL_MESSAGE_PREFIX + chatId;
+  }
+
+  async function getTelegramControlMessageId(env, chatId) {
+    return await env.CONFIGS_KV.get(telegramControlMessageKey(chatId));
+  }
+
+  async function setTelegramControlMessageId(env, chatId, messageId) {
+    if (messageId) {
+      await env.CONFIGS_KV.put(
+        telegramControlMessageKey(chatId),
+        String(messageId),
+        { expirationTtl: 172800 },
       );
     }
-    return;
   }
 
-  await telegramControlMessage(
-    settings.botToken,
+  async function telegramControlMessage(
+    botToken,
     chatId,
-    reply,
-    markup.inline_keyboard ? markup : telegramInlineKeyboard(origin),
+    text,
+    replyMarkup,
     env,
-  );
-}
-
-async function handleTelegramConfigDocument(
-  document,
-  caption,
-  state,
-  chatId,
-  env,
-  settings,
-  origin,
-) {
-  const fileText = await telegramDownloadDocumentText(
-    settings.botToken,
-    document,
-  );
-  if (!fileText.trim()) {
-    return "فایل ارسال‌شده خالی است یا متن قابل خواندن ندارد.";
-  }
-
-  if (
-    state &&
-    ["set_configs", "append_configs", "bulk_configs"].includes(state.action)
   ) {
-    return await handleTelegramStateInput(
-      fileText,
-      state,
-      chatId,
-      env,
-      settings,
-      origin,
-      true,
-    );
+    const oldMessageId = env
+      ? await getTelegramControlMessageId(env, chatId)
+      : null;
+
+    if (oldMessageId) {
+      const edited = await telegramEditMessage(
+        botToken,
+        chatId,
+        oldMessageId,
+        text,
+        replyMarkup,
+      );
+      if (edited && edited.ok) {
+        return edited;
+      }
+    }
+
+    const sent = await telegramSend(botToken, chatId, text, replyMarkup);
+    if (env && sent && sent.ok && sent.result && sent.result.message_id) {
+      await setTelegramControlMessageId(env, chatId, sent.result.message_id);
+    }
+    return sent;
   }
 
-  const commandLine = String(caption || "")
-    .split("\n")[0]
-    .trim();
-  const command = (commandLine.split(/\s+/)[0] || "").toLowerCase();
-  const allowed = new Set([
-    "/setconfigs",
-    "/appendconfigs",
-    "/apply_all",
-    "/append_all",
-    "/apply_users",
-    "/append_users",
-  ]);
+  async function processTelegramUpdate(update, env, settings, origin) {
+    if (update.callback_query) {
+      await handleTelegramCallback(update.callback_query, env, settings, origin);
+      return;
+    }
 
-  if (!allowed.has(command)) {
-    return telegramFileHelpText();
-  }
+    const message = update.message || update.edited_message || null;
+    if (!message || !message.chat) return;
 
-  return await runTelegramCommand(
-    commandLine + "\n" + fileText,
-    env,
-    origin,
-    settings,
-  );
-}
+    const chatId = String(message.chat.id);
+    if (!constantTimeEqual(chatId, String(settings.adminChatId || ""))) {
+      if (settings.botToken) {
+        await telegramSend(settings.botToken, chatId, t("دسترسی شما مجاز نیست.", "Access denied."));
+      }
+      return;
+    }
 
-async function telegramDownloadDocumentText(botToken, document) {
-  if (!document || !document.file_id) {
-    const error = new Error("فایل معتبر نیست.");
-    error.status = 400;
-    throw error;
-  }
-
-  if (document.file_size && document.file_size > MAX_CONFIG_BYTES) {
-    const error = new Error("حجم فایل بیشتر از ۵ مگابایت است.");
-    error.status = 413;
-    throw error;
-  }
-
-  const metaResponse = await fetch(
-    "https://api.telegram.org/bot" +
-      botToken +
-      "/getFile?file_id=" +
-      encodeURIComponent(document.file_id),
-  );
-  const meta = await metaResponse.json().catch(() => null);
-
-  if (!meta || !meta.ok || !meta.result || !meta.result.file_path) {
-    const error = new Error("دریافت فایل از تلگرام ناموفق بود.");
-    error.status = 502;
-    throw error;
-  }
-
-  const fileResponse = await fetch(
-    "https://api.telegram.org/file/bot" +
-      botToken +
-      "/" +
-      meta.result.file_path,
-  );
-  if (!fileResponse.ok) {
-    const error = new Error("دانلود فایل از تلگرام ناموفق بود.");
-    error.status = 502;
-    throw error;
-  }
-
-  const buffer = await fileResponse.arrayBuffer();
-  if (buffer.byteLength > MAX_CONFIG_BYTES) {
-    const error = new Error("حجم فایل بیشتر از ۵ مگابایت است.");
-    error.status = 413;
-    throw error;
-  }
-
-  return new TextDecoder("utf-8").decode(buffer).replace(/^\uFEFF/, "");
-}
-
-async function handleTelegramCallback(callbackQuery, env, settings, origin) {
-  const fromId = String(
-    callbackQuery.from && callbackQuery.from.id ? callbackQuery.from.id : "",
-  );
-
-  if (!constantTimeEqual(fromId, String(settings.adminChatId || ""))) {
-    await telegramAnswerCallback(
-      settings.botToken,
-      callbackQuery.id,
-      "دسترسی مجاز نیست.",
-    );
-    return;
-  }
-
-  const chatId =
-    callbackQuery.message && callbackQuery.message.chat
-      ? String(callbackQuery.message.chat.id)
-      : fromId;
-  const messageId = callbackQuery.message
-    ? callbackQuery.message.message_id
-    : null;
-  const data = callbackQuery.data || "";
-  const users = await getUsers(env);
-
-  const edit = async function (text, markup) {
-    return telegramEditCallbackMessage(
-      callbackQuery,
-      settings,
-      chatId,
-      text,
-      markup,
-    );
-  };
-
-  await telegramAnswerCallback(settings.botToken, callbackQuery.id, "");
-
-  if (data === "tg:home") {
-    await clearTelegramState(env, chatId);
-    await edit(telegramStartText(), telegramInlineKeyboard(origin));
-    return;
-  }
-
-  if (data === "tg:users") {
-    await edit(
-      users.length
-        ? "کاربر مورد نظر را انتخاب کنید:"
-        : "هنوز کاربری ایجاد نشده است.",
-      users.length
-        ? telegramUsersKeyboard(users)
-        : telegramInlineKeyboard(origin),
-    );
-    return;
-  }
-
-  if (data.startsWith("tg:user:")) {
-    const id = data.slice("tg:user:".length);
-    const user = users.find((item) => item.id === id);
-    if (!user) return edit("کاربر پیدا نشد.", telegramUsersKeyboard(users));
-    await edit(
-      telegramUserSummaryText(user),
-      telegramUserActionsKeyboard(user, origin),
-    );
-    return;
-  }
-
-  if (data.startsWith("tg:user_links:")) {
-    const id = data.slice("tg:user_links:".length);
-    const user = users.find((item) => item.id === id);
-    if (!user) return edit("کاربر پیدا نشد.", telegramUsersKeyboard(users));
-    const p = publicUser(user, new URL(origin), env);
-    await edit(
-      "لینک‌های کانفیگ " +
-        escapeHtml(user.name) +
-        "\n\nRaw:\n" +
-        p.links.raw +
-        "\n\nBase64:\n" +
-        p.links.base64,
-      telegramUserActionsKeyboard(user, origin),
-    );
-    return;
-  }
-
-  if (data.startsWith("tg:user_summary:")) {
-    const id = data.slice("tg:user_summary:".length);
-    const user = users.find((item) => item.id === id);
-    if (!user) return edit("کاربر پیدا نشد.", telegramUsersKeyboard(users));
-    const configs = (await env.CONFIGS_KV.get(configKey(user.id))) || "";
-    const stats = analyzeConfigs(configs);
-    await edit(
-      "خلاصه کانفیگ " +
-        escapeHtml(user.name) +
-        "\nتعداد: " +
-        stats.total +
-        "\nشناخته‌شده: " +
-        stats.valid +
-        "\nنامشخص: " +
-        stats.unknown +
-        "\nتکراری محتوایی: " +
-        stats.duplicatesByContent,
-      telegramUserActionsKeyboard(user, origin),
-    );
-    return;
-  }
-
-  if (data.startsWith("tg:user_set:") || data.startsWith("tg:user_append:")) {
-    const isAppend = data.startsWith("tg:user_append:");
-    const id = data.slice(
-      isAppend ? "tg:user_append:".length : "tg:user_set:".length,
-    );
-    const user = users.find((item) => item.id === id);
-    if (!user) return edit("کاربر پیدا نشد.", telegramUsersKeyboard(users));
-    await setTelegramState(env, chatId, {
-      action: isAppend ? "append_configs" : "set_configs",
-      userId: user.id,
-      messageId,
-    });
-    await edit(
-      (isAppend ? "کانفیگ‌هایی که باید اضافه شوند" : "کانفیگ‌های جایگزین") +
-        " را برای " +
-        escapeHtml(user.name) +
-        " به صورت متن یا فایل ارسال کنید.\nبرای لغو، /cancel را بزنید.",
-      telegramUserActionsKeyboard(user, origin),
-    );
-    return;
-  }
-
-  if (data.startsWith("tg:user_rename:")) {
-    const id = data.slice("tg:user_rename:".length);
-    const user = users.find((item) => item.id === id);
-    if (!user) return edit("کاربر پیدا نشد.", telegramUsersKeyboard(users));
-    await setTelegramState(env, chatId, {
-      action: "rename_user",
-      userId: user.id,
-      messageId,
-    });
-    await edit(
-      "نام جدید کاربر را ارسال کنید.\nبرای لغو، /cancel را بزنید.",
-      telegramUserActionsKeyboard(user, origin),
-    );
-    return;
-  }
-
-  if (data.startsWith("tg:user_toggle:")) {
-    const id = data.slice("tg:user_toggle:".length);
-    const user = users.find((item) => item.id === id);
-    if (!user) return edit("کاربر پیدا نشد.", telegramUsersKeyboard(users));
-    user.enabled = user.enabled === false;
-    user.updatedAt = new Date().toISOString();
-    await saveUsers(env, users);
-    await edit(
-      "وضعیت کاربر تغییر کرد: " +
-        escapeHtml(user.name) +
-        " - " +
-        (user.enabled ? "فعال" : "غیرفعال"),
-      telegramUserActionsKeyboard(user, origin),
-    );
-    return;
-  }
-
-  if (data.startsWith("tg:user_regen_confirm:")) {
-    const id = data.slice("tg:user_regen_confirm:".length);
-    await edit(
-      "توکن قبلی این کاربر از کار می‌افتد. تأیید می‌کنید؟",
-      telegramConfirmKeyboard("tg:user_regen", id, "tg:user:" + id),
-    );
-    return;
-  }
-
-  if (data.startsWith("tg:user_regen:")) {
-    const id = data.slice("tg:user_regen:".length);
-    const user = users.find((item) => item.id === id);
-    if (!user) return edit("کاربر پیدا نشد.", telegramUsersKeyboard(users));
-    await env.CONFIGS_KV.delete(tokenKey(user.token));
-    user.token = generateToken();
-    user.updatedAt = new Date().toISOString();
-    await env.CONFIGS_KV.put(tokenKey(user.token), user.id);
-    await saveUsers(env, users);
-    await edit(
-      "توکن جدید ساخته شد.",
-      telegramUserActionsKeyboard(user, origin),
-    );
-    return;
-  }
-
-  if (data.startsWith("tg:user_delete_confirm:")) {
-    const id = data.slice("tg:user_delete_confirm:".length);
-    await edit(
-      "این کاربر و کانفیگ‌های او حذف شود؟",
-      telegramConfirmKeyboard("tg:user_delete", id, "tg:user:" + id),
-    );
-    return;
-  }
-
-  if (data.startsWith("tg:user_delete:")) {
-    const id = data.slice("tg:user_delete:".length);
-    const index = users.findIndex((item) => item.id === id);
-    if (index === -1)
-      return edit("کاربر پیدا نشد.", telegramUsersKeyboard(users));
-    const [removed] = users.splice(index, 1);
-    await saveUsers(env, users);
-    await env.CONFIGS_KV.delete(tokenKey(removed.token));
-    await env.CONFIGS_KV.delete(configKey(removed.id));
-    await env.CONFIGS_KV.delete(backupConfigKey(removed.id));
-    await env.CONFIGS_KV.delete(metaKey(removed.id));
-    await env.CONFIGS_KV.delete(backupMetaKey(removed.id));
-    await edit(
-      "کاربر حذف شد: " + escapeHtml(removed.name),
-      users.length
-        ? telegramUsersKeyboard(users)
-        : telegramInlineKeyboard(origin),
-    );
-    return;
-  }
-
-  if (data === "tg:create_user") {
-    await setTelegramState(env, chatId, { action: "create_user", messageId });
-    await edit(
-      "نام کاربر جدید را ارسال کنید.\nبرای لغو، /cancel را بزنید.",
-      telegramInlineKeyboard(origin),
-    );
-    return;
-  }
-
-  if (data === "tg:bulk_menu") {
-    await clearTelegramState(env, chatId);
-    await edit("نوع اعمال گروهی را انتخاب کنید:", telegramBulkModeKeyboard());
-    return;
-  }
-
-  if (data.startsWith("tg:bulk_all:")) {
-    const mode =
-      data.slice("tg:bulk_all:".length) === "append" ? "append" : "replace";
-    await setTelegramState(env, chatId, {
-      action: "bulk_configs",
-      mode,
-      target: "all",
-      userIds: [],
-      messageId,
-    });
-    await edit(
-      (mode === "append"
-        ? "کانفیگ‌هایی که باید به همه کاربران اضافه شوند"
-        : "کانفیگ‌های جایگزین برای همه کاربران") +
-        " را به صورت متن یا فایل ارسال کنید.\nبرای لغو، /cancel را بزنید.",
-      telegramBulkModeKeyboard(),
-    );
-    return;
-  }
-
-  if (data.startsWith("tg:bulk_select:")) {
-    const mode =
-      data.slice("tg:bulk_select:".length) === "append" ? "append" : "replace";
-    await setTelegramState(env, chatId, {
-      action: "bulk_select",
-      mode,
-      userIds: [],
-      messageId,
-    });
-    await edit(
-      "کاربران مورد نظر را انتخاب کنید و سپس «ادامه و ارسال کانفیگ» را بزنید:",
-      telegramBulkSelectKeyboard(users, []),
-    );
-    return;
-  }
-
-  if (data.startsWith("tg:bulk_toggle:")) {
-    const id = data.slice("tg:bulk_toggle:".length);
     const state = await getTelegramState(env, chatId);
-    if (!state || state.action !== "bulk_select") {
-      await setTelegramState(env, chatId, {
-        action: "bulk_select",
-        mode: "replace",
-        userIds: [id],
-        messageId,
-      });
-      await edit(
-        "کاربران انتخاب‌شده: 1",
-        telegramBulkSelectKeyboard(users, [id]),
+
+    if (message.document) {
+      const caption = normalizeTelegramText(String(message.caption || "").trim());
+      const reply = await handleTelegramConfigDocument(
+        message.document,
+        caption,
+        state,
+        chatId,
+        env,
+        settings,
+        origin,
+      );
+      await telegramStateReply(
+        settings.botToken,
+        chatId,
+        state,
+        reply,
+        telegramInlineKeyboard(origin),
       );
       return;
     }
-    const selected = new Set(state.userIds || []);
-    if (selected.has(id)) selected.delete(id);
-    else selected.add(id);
-    state.userIds = Array.from(selected);
-    state.messageId = state.messageId || messageId;
-    await setTelegramState(env, chatId, state);
-    await edit(
-      "کاربران انتخاب‌شده: " + (state.userIds.length || 0),
-      telegramBulkSelectKeyboard(users, state.userIds),
+
+    if (typeof message.text !== "string") {
+      await telegramSend(
+        settings.botToken,
+        chatId,
+        t("این پیام قابل پردازش نیست. برای ارسال کانفیگ با فایل، دکمه «📄 ارسال فایل» را بزنید.", "This message cannot be processed. To send a config file, use the Upload file button."),
+        telegramReplyKeyboard(origin),
+      );
+      return;
+    }
+
+    const text = normalizeTelegramText(message.text.trim());
+
+    if (/^\/language(?:\s+(?:fa|en))?$/.test(text)) {
+      const selected = text.split(/\s+/)[1];
+      if (selected) await changeLanguage(selected, env, settings, chatId, origin);
+      else await telegramSend(settings.botToken, chatId,
+        "زبان ربات را انتخاب کنید / Choose the bot language:", telegramLanguageKeyboard());
+      return;
+    }
+
+    if (text === "/cancel") {
+      const activeState = await getTelegramState(env, chatId);
+      await clearTelegramState(env, chatId);
+      await telegramStateReply(
+        settings.botToken,
+        chatId,
+        activeState,
+        t("عملیات جاری لغو شد.", "Current operation cancelled."),
+        telegramInlineKeyboard(origin),
+      );
+      return;
+    }
+
+    if (state && !text.startsWith("/")) {
+      const reply = await handleTelegramStateInput(
+        text,
+        state,
+        chatId,
+        env,
+        settings,
+        origin,
+      );
+      await telegramStateReply(
+        settings.botToken,
+        chatId,
+        state,
+        reply,
+        telegramInlineKeyboard(origin),
+      );
+      return;
+    }
+
+    if (text === "/users") {
+      const users = await getUsers(env);
+      await telegramControlMessage(
+        settings.botToken,
+        chatId,
+        users.length
+          ? t("کاربر مورد نظر را انتخاب کنید:", "Select a user:")
+          : t("هنوز کاربری ایجاد نشده است.", "No users have been created yet."),
+        users.length
+          ? telegramUsersKeyboard(users)
+          : telegramInlineKeyboard(origin),
+        env,
+      );
+      return;
+    }
+
+    if (text === "/bulk") {
+      await telegramControlMessage(
+        settings.botToken,
+        chatId,
+        t("نوع اعمال گروهی را انتخاب کنید:", "Choose a bulk update mode:"),
+        telegramBulkModeKeyboard(),
+        env,
+      );
+      return;
+    }
+
+    if (text === "/newuser") {
+      await setTelegramState(env, chatId, { action: "create_user" });
+      const sentNewUser = await telegramControlMessage(
+        settings.botToken,
+        chatId,
+        t("نام کاربر جدید را ارسال کنید.\nبرای لغو، /cancel را بزنید.", "Send the new user's name.\nUse /cancel to cancel."),
+        telegramInlineKeyboard(origin),
+        env,
+      );
+      if (sentNewUser && sentNewUser.result && sentNewUser.result.message_id)
+        await setTelegramState(env, chatId, {
+          action: "create_user",
+          messageId: sentNewUser.result.message_id,
+        });
+      return;
+    }
+
+    if (text === "/password_change") {
+      await setTelegramState(env, chatId, { action: "change_password" });
+      const sentPass = await telegramControlMessage(
+        settings.botToken,
+        chatId,
+        t("رمز عبور جدید پنل را ارسال کنید. حداقل ۸ کاراکتر.\nبرای لغو، /cancel را بزنید.", "Send the new panel password (at least 8 characters).\nUse /cancel to cancel."),
+        telegramInlineKeyboard(origin),
+        env,
+      );
+      if (sentPass && sentPass.result && sentPass.result.message_id)
+        await setTelegramState(env, chatId, {
+          action: "change_password",
+          messageId: sentPass.result.message_id,
+        });
+      return;
+    }
+
+    const reply = await runTelegramCommand(text, env, origin, settings);
+    const markup = shouldShowTelegramInlineKeyboard(text)
+      ? telegramInlineKeyboard(origin)
+      : telegramReplyKeyboard(origin);
+
+    if (text === "/start") {
+      const sentStart = await telegramSend(
+        settings.botToken,
+        chatId,
+        reply,
+        telegramInlineKeyboard(origin),
+      );
+      if (
+        sentStart &&
+        sentStart.ok &&
+        sentStart.result &&
+        sentStart.result.message_id
+      ) {
+        await setTelegramControlMessageId(
+          env,
+          chatId,
+          sentStart.result.message_id,
+        );
+      }
+      return;
+    }
+
+    await telegramControlMessage(
+      settings.botToken,
+      chatId,
+      reply,
+      markup.inline_keyboard ? markup : telegramInlineKeyboard(origin),
+      env,
     );
-    return;
   }
 
-  if (data === "tg:bulk_selected_continue") {
-    const state = await getTelegramState(env, chatId);
+  async function handleTelegramConfigDocument(
+    document,
+    caption,
+    state,
+    chatId,
+    env,
+    settings,
+    origin,
+  ) {
+    const fileText = await telegramDownloadDocumentText(
+      settings.botToken,
+      document,
+    );
+    if (!fileText.trim()) {
+      return t("فایل ارسال‌شده خالی است یا متن قابل خواندن ندارد.", "The uploaded file is empty or contains no readable text.");
+    }
+
     if (
-      !state ||
-      state.action !== "bulk_select" ||
-      !state.userIds ||
-      !state.userIds.length
+      state &&
+      ["set_configs", "append_configs", "bulk_configs"].includes(state.action)
     ) {
+      return await handleTelegramStateInput(
+        fileText,
+        state,
+        chatId,
+        env,
+        settings,
+        origin,
+        true,
+      );
+    }
+
+    const commandLine = String(caption || "")
+      .split("\n")[0]
+      .trim();
+    const command = (commandLine.split(/\s+/)[0] || "").toLowerCase();
+    const allowed = new Set([
+      "/setconfigs",
+      "/appendconfigs",
+      "/apply_all",
+      "/append_all",
+      "/apply_users",
+      "/append_users",
+    ]);
+
+    if (!allowed.has(command)) {
+      return telegramFileHelpText();
+    }
+
+    return await runTelegramCommand(
+      commandLine + "\n" + fileText,
+      env,
+      origin,
+      settings,
+    );
+  }
+
+  async function telegramDownloadDocumentText(botToken, document) {
+    if (!document || !document.file_id) {
+      const error = new Error(t("فایل معتبر نیست.", "Invalid file."));
+      error.status = 400;
+      throw error;
+    }
+
+    if (document.file_size && document.file_size > MAX_CONFIG_BYTES) {
+      const error = new Error(t("حجم فایل بیشتر از ۵ مگابایت است.", "The file is larger than 5 MB."));
+      error.status = 413;
+      throw error;
+    }
+
+    const metaResponse = await fetch(
+      "https://api.telegram.org/bot" +
+        botToken +
+        "/getFile?file_id=" +
+        encodeURIComponent(document.file_id),
+    );
+    const meta = await metaResponse.json().catch(() => null);
+
+    if (!meta || !meta.ok || !meta.result || !meta.result.file_path) {
+      const error = new Error(t("دریافت فایل از تلگرام ناموفق بود.", "Failed to retrieve the file from Telegram."));
+      error.status = 502;
+      throw error;
+    }
+
+    const fileResponse = await fetch(
+      "https://api.telegram.org/file/bot" +
+        botToken +
+        "/" +
+        meta.result.file_path,
+    );
+    if (!fileResponse.ok) {
+      const error = new Error(t("دانلود فایل از تلگرام ناموفق بود.", "Failed to download the file from Telegram."));
+      error.status = 502;
+      throw error;
+    }
+
+    const buffer = await fileResponse.arrayBuffer();
+    if (buffer.byteLength > MAX_CONFIG_BYTES) {
+      const error = new Error(t("حجم فایل بیشتر از ۵ مگابایت است.", "The file is larger than 5 MB."));
+      error.status = 413;
+      throw error;
+    }
+
+    return new TextDecoder("utf-8").decode(buffer).replace(/^\uFEFF/, "");
+  }
+
+  async function handleTelegramCallback(callbackQuery, env, settings, origin) {
+    const fromId = String(
+      callbackQuery.from && callbackQuery.from.id ? callbackQuery.from.id : "",
+    );
+
+    if (!constantTimeEqual(fromId, String(settings.adminChatId || ""))) {
+      await telegramAnswerCallback(
+        settings.botToken,
+        callbackQuery.id,
+        t("دسترسی مجاز نیست.", "Access denied."),
+      );
+      return;
+    }
+
+    const chatId =
+      callbackQuery.message && callbackQuery.message.chat
+        ? String(callbackQuery.message.chat.id)
+        : fromId;
+    const messageId = callbackQuery.message
+      ? callbackQuery.message.message_id
+      : null;
+    const data = callbackQuery.data || "";
+    const users = await getUsers(env);
+
+    const edit = async function (text, markup) {
+      return telegramEditCallbackMessage(
+        callbackQuery,
+        settings,
+        chatId,
+        text,
+        markup,
+      );
+    };
+
+    await telegramAnswerCallback(settings.botToken, callbackQuery.id, "");
+
+    if (data === "tg:language") {
+      await edit("زبان ربات را انتخاب کنید / Choose the bot language:", telegramLanguageKeyboard());
+      return;
+    }
+    if (data === "tg:language:fa" || data === "tg:language:en") {
+      await changeLanguage(data.slice("tg:language:".length), env, settings, chatId, origin);
+      await edit(telegramStartText(), telegramInlineKeyboard(origin));
+      return;
+    }
+
+    if (data === "tg:home") {
+      await clearTelegramState(env, chatId);
+      await edit(telegramStartText(), telegramInlineKeyboard(origin));
+      return;
+    }
+
+    if (data === "tg:users") {
       await edit(
-        "حداقل یک کاربر را انتخاب کنید.",
+        users.length
+          ? t("کاربر مورد نظر را انتخاب کنید:", "Select a user:")
+          : t("هنوز کاربری ایجاد نشده است.", "No users have been created yet."),
+        users.length
+          ? telegramUsersKeyboard(users)
+          : telegramInlineKeyboard(origin),
+      );
+      return;
+    }
+
+    if (data.startsWith("tg:user:")) {
+      const id = data.slice("tg:user:".length);
+      const user = users.find((item) => item.id === id);
+      if (!user) return edit(t("کاربر پیدا نشد.", "User not found."), telegramUsersKeyboard(users));
+      await edit(
+        telegramUserSummaryText(user),
+        telegramUserActionsKeyboard(user, origin),
+      );
+      return;
+    }
+
+    if (data.startsWith("tg:user_links:")) {
+      const id = data.slice("tg:user_links:".length);
+      const user = users.find((item) => item.id === id);
+      if (!user) return edit(t("کاربر پیدا نشد.", "User not found."), telegramUsersKeyboard(users));
+      const p = publicUser(user, new URL(origin), env);
+      await edit(
+        t("لینک‌های کانفیگ ", "Config links for ") +
+          escapeHtml(user.name) +
+          "\n\nRaw:\n" +
+          p.links.raw +
+          "\n\nBase64:\n" +
+          p.links.base64,
+        telegramUserActionsKeyboard(user, origin),
+      );
+      return;
+    }
+
+    if (data.startsWith("tg:user_summary:")) {
+      const id = data.slice("tg:user_summary:".length);
+      const user = users.find((item) => item.id === id);
+      if (!user) return edit(t("کاربر پیدا نشد.", "User not found."), telegramUsersKeyboard(users));
+      const configs = (await env.CONFIGS_KV.get(configKey(user.id))) || "";
+      const stats = analyzeConfigs(configs);
+      await edit(
+        t("خلاصه کانفیگ ", "Config summary for ") +
+          escapeHtml(user.name) +
+          t("\nتعداد: ", "\nCount: ") +
+          stats.total +
+          t("\nشناخته‌شده: ", "\nRecognized: ") +
+          stats.valid +
+          t("\nنامشخص: ", "\nUnknown: ") +
+          stats.unknown +
+          t("\nتکراری محتوایی: ", "\nContent duplicates: ") +
+          stats.duplicatesByContent,
+        telegramUserActionsKeyboard(user, origin),
+      );
+      return;
+    }
+
+    if (data.startsWith("tg:user_set:") || data.startsWith("tg:user_append:")) {
+      const isAppend = data.startsWith("tg:user_append:");
+      const id = data.slice(
+        isAppend ? "tg:user_append:".length : "tg:user_set:".length,
+      );
+      const user = users.find((item) => item.id === id);
+      if (!user) return edit(t("کاربر پیدا نشد.", "User not found."), telegramUsersKeyboard(users));
+      await setTelegramState(env, chatId, {
+        action: isAppend ? "append_configs" : "set_configs",
+        userId: user.id,
+        messageId,
+      });
+      await edit(
+        (isAppend ? t("کانفیگ‌هایی که باید اضافه شوند", "Configs to append") : t("کانفیگ‌های جایگزین", "Replacement configs")) +
+          t(" را برای ", " for ") +
+          escapeHtml(user.name) +
+          t(" به صورت متن یا فایل ارسال کنید.\nبرای لغو، /cancel را بزنید.", ": send them as text or a file.\nUse /cancel to cancel."),
+        telegramUserActionsKeyboard(user, origin),
+      );
+      return;
+    }
+
+    if (data.startsWith("tg:user_rename:")) {
+      const id = data.slice("tg:user_rename:".length);
+      const user = users.find((item) => item.id === id);
+      if (!user) return edit(t("کاربر پیدا نشد.", "User not found."), telegramUsersKeyboard(users));
+      await setTelegramState(env, chatId, {
+        action: "rename_user",
+        userId: user.id,
+        messageId,
+      });
+      await edit(
+        t("نام جدید کاربر را ارسال کنید.\nبرای لغو، /cancel را بزنید.", "Send the user's new name.\nUse /cancel to cancel."),
+        telegramUserActionsKeyboard(user, origin),
+      );
+      return;
+    }
+
+    if (data.startsWith("tg:user_toggle:")) {
+      const id = data.slice("tg:user_toggle:".length);
+      const user = users.find((item) => item.id === id);
+      if (!user) return edit(t("کاربر پیدا نشد.", "User not found."), telegramUsersKeyboard(users));
+      user.enabled = user.enabled === false;
+      user.updatedAt = new Date().toISOString();
+      await saveUsers(env, users);
+      await edit(
+        t("وضعیت کاربر تغییر کرد: ", "User status changed: ") +
+          escapeHtml(user.name) +
+          " - " +
+          (user.enabled ? t("فعال", "Enabled") : t("غیرفعال", "Disabled")),
+        telegramUserActionsKeyboard(user, origin),
+      );
+      return;
+    }
+
+    if (data.startsWith("tg:user_regen_confirm:")) {
+      const id = data.slice("tg:user_regen_confirm:".length);
+      await edit(
+        t("توکن قبلی این کاربر از کار می‌افتد. تأیید می‌کنید؟", "This user's previous token will stop working. Confirm?"),
+        telegramConfirmKeyboard("tg:user_regen", id, "tg:user:" + id),
+      );
+      return;
+    }
+
+    if (data.startsWith("tg:user_regen:")) {
+      const id = data.slice("tg:user_regen:".length);
+      const user = users.find((item) => item.id === id);
+      if (!user) return edit(t("کاربر پیدا نشد.", "User not found."), telegramUsersKeyboard(users));
+      await env.CONFIGS_KV.delete(tokenKey(user.token));
+      user.token = generateToken();
+      user.updatedAt = new Date().toISOString();
+      await env.CONFIGS_KV.put(tokenKey(user.token), user.id);
+      await saveUsers(env, users);
+      await edit(
+        t("توکن جدید ساخته شد.", "New token generated."),
+        telegramUserActionsKeyboard(user, origin),
+      );
+      return;
+    }
+
+    if (data.startsWith("tg:user_delete_confirm:")) {
+      const id = data.slice("tg:user_delete_confirm:".length);
+      await edit(
+        t("این کاربر و کانفیگ‌های او حذف شود؟", "Delete this user and their configs?"),
+        telegramConfirmKeyboard("tg:user_delete", id, "tg:user:" + id),
+      );
+      return;
+    }
+
+    if (data.startsWith("tg:user_delete:")) {
+      const id = data.slice("tg:user_delete:".length);
+      const index = users.findIndex((item) => item.id === id);
+      if (index === -1)
+        return edit(t("کاربر پیدا نشد.", "User not found."), telegramUsersKeyboard(users));
+      const [removed] = users.splice(index, 1);
+      await saveUsers(env, users);
+      await env.CONFIGS_KV.delete(tokenKey(removed.token));
+      await env.CONFIGS_KV.delete(configKey(removed.id));
+      await env.CONFIGS_KV.delete(backupConfigKey(removed.id));
+      await env.CONFIGS_KV.delete(metaKey(removed.id));
+      await env.CONFIGS_KV.delete(backupMetaKey(removed.id));
+      await edit(
+        t("کاربر حذف شد: ", "User deleted: ") + escapeHtml(removed.name),
+        users.length
+          ? telegramUsersKeyboard(users)
+          : telegramInlineKeyboard(origin),
+      );
+      return;
+    }
+
+    if (data === "tg:create_user") {
+      await setTelegramState(env, chatId, { action: "create_user", messageId });
+      await edit(
+        t("نام کاربر جدید را ارسال کنید.\nبرای لغو، /cancel را بزنید.", "Send the new user's name.\nUse /cancel to cancel."),
+        telegramInlineKeyboard(origin),
+      );
+      return;
+    }
+
+    if (data === "tg:bulk_menu") {
+      await clearTelegramState(env, chatId);
+      await edit(t("نوع اعمال گروهی را انتخاب کنید:", "Choose a bulk update mode:"), telegramBulkModeKeyboard());
+      return;
+    }
+
+    if (data.startsWith("tg:bulk_all:")) {
+      const mode =
+        data.slice("tg:bulk_all:".length) === "append" ? "append" : "replace";
+      await setTelegramState(env, chatId, {
+        action: "bulk_configs",
+        mode,
+        target: "all",
+        userIds: [],
+        messageId,
+      });
+      await edit(
+        (mode === "append"
+          ? t("کانفیگ‌هایی که باید به همه کاربران اضافه شوند", "Configs to append to all users")
+          : t("کانفیگ‌های جایگزین برای همه کاربران", "Replacement configs for all users")) +
+          t(" را به صورت متن یا فایل ارسال کنید.\nبرای لغو، /cancel را بزنید.", ": send them as text or a file.\nUse /cancel to cancel."),
+        telegramBulkModeKeyboard(),
+      );
+      return;
+    }
+
+    if (data.startsWith("tg:bulk_select:")) {
+      const mode =
+        data.slice("tg:bulk_select:".length) === "append" ? "append" : "replace";
+      await setTelegramState(env, chatId, {
+        action: "bulk_select",
+        mode,
+        userIds: [],
+        messageId,
+      });
+      await edit(
+        t("کاربران مورد نظر را انتخاب کنید و سپس «ادامه و ارسال کانفیگ» را بزنید:", "Select users, then press Continue and send configs:"),
         telegramBulkSelectKeyboard(users, []),
       );
       return;
     }
-    await setTelegramState(env, chatId, {
-      action: "bulk_configs",
-      mode: state.mode || "replace",
-      target: "selected",
-      userIds: state.userIds,
-      messageId: state.messageId || messageId,
-    });
-    await edit(
-      "اکنون کانفیگ‌ها را به صورت متن یا فایل ارسال کنید.\nبرای لغو، /cancel را بزنید.",
-      telegramBulkSelectKeyboard(users, state.userIds),
-    );
-    return;
-  }
 
-  if (data === "tg:password") {
-    await setTelegramState(env, chatId, {
-      action: "change_password",
-      messageId,
-    });
-    await edit(
-      "رمز عبور جدید پنل را ارسال کنید. حداقل ۸ کاراکتر.\nبرای لغو، /cancel را بزنید.",
-      telegramInlineKeyboard(origin),
-    );
-    return;
-  }
-
-  if (data === "tg:help") {
-    await edit(telegramHelpText(), telegramInlineKeyboard(origin));
-    return;
-  }
-
-  if (data === "tg:commands") {
-    await edit(telegramCommandsText(), telegramInlineKeyboard(origin));
-    return;
-  }
-
-  if (data === "tg:file_help") {
-    await edit(telegramFileHelpText(), telegramInlineKeyboard(origin));
-    return;
-  }
-}
-
-function normalizeTelegramText(text) {
-  const map = {
-    "👥 کاربران": "/users",
-    "❓ راهنما": "/help",
-    "📋 لیست دستورات": "/commands",
-    "📄 ارسال فایل": "/file",
-    "➕ افزودن کاربر": "/newuser",
-    "📦 اعمال گروهی": "/bulk",
-    "🔐 تغییر رمز": "/password_change",
-    "❌ لغو": "/cancel",
-  };
-
-  return map[text] || text;
-}
-
-function shouldShowTelegramInlineKeyboard(text) {
-  return (
-    text === "/start" ||
-    text === "/help" ||
-    text === "/commands" ||
-    text === "/file" ||
-    text === "/miniapp" ||
-    text === "/newuser" ||
-    text === "/bulk" ||
-    text === "/password_change"
-  );
-}
-
-async function getTelegramState(env, chatId) {
-  return await getJson(env, telegramStateKey(chatId), null);
-}
-
-async function setTelegramState(env, chatId, state) {
-  await env.CONFIGS_KV.put(
-    telegramStateKey(chatId),
-    JSON.stringify({ ...state, updatedAt: new Date().toISOString() }),
-    { expirationTtl: 3600 },
-  );
-}
-
-async function clearTelegramState(env, chatId) {
-  await env.CONFIGS_KV.delete(telegramStateKey(chatId));
-}
-
-function telegramStateKey(chatId) {
-  return TELEGRAM_STATE_PREFIX + chatId;
-}
-
-async function handleTelegramStateInput(
-  inputText,
-  state,
-  chatId,
-  env,
-  settings,
-  origin,
-  fromFile = false,
-) {
-  const text = String(inputText || "").trim();
-  if (!text) return "متن دریافتی خالی است.";
-
-  if (state.action === "create_user") {
-    const name = cleanName(text);
-    if (!name) return "نام کاربر معتبر نیست.";
-    const users = await getUsers(env);
-    const user = {
-      id: generateId(),
-      name,
-      token: generateToken(),
-      enabled: true,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      lastConfigUpdate: null,
-    };
-    users.push(user);
-    await saveUsers(env, users);
-    await env.CONFIGS_KV.put(tokenKey(user.token), user.id);
-    await env.CONFIGS_KV.put(configKey(user.id), "");
-    await clearTelegramState(env, chatId);
-    const p = publicUser(user, new URL(origin), env);
-    return (
-      "کاربر ایجاد شد.\nنام: " +
-      escapeHtml(user.name) +
-      "\nشناسه: " +
-      user.id +
-      "\nلینک Raw:\n" +
-      p.links.raw
-    );
-  }
-
-  if (state.action === "rename_user") {
-    const users = await getUsers(env);
-    const user = users.find((item) => item.id === state.userId);
-    if (!user) {
-      await clearTelegramState(env, chatId);
-      return "کاربر پیدا نشد.";
-    }
-    const name = cleanName(text);
-    if (!name) return "نام جدید معتبر نیست.";
-    user.name = name;
-    user.updatedAt = new Date().toISOString();
-    await saveUsers(env, users);
-    await clearTelegramState(env, chatId);
-    return "نام کاربر تغییر کرد: " + escapeHtml(user.name);
-  }
-
-  if (state.action === "change_password") {
-    if (text.length < 8) return "رمز عبور جدید باید حداقل ۸ کاراکتر باشد.";
-    await env.CONFIGS_KV.put(ADMIN_PASSWORD_HASH_KEY, await sha256Hex(text));
-    await env.CONFIGS_KV.put(
-      ADMIN_PASSWORD_META_KEY,
-      JSON.stringify({
-        updatedAt: new Date().toISOString(),
-        source: "telegram-button",
-      }),
-    );
-    await clearTelegramState(env, chatId);
-    return "رمز عبور پنل تغییر کرد.";
-  }
-
-  if (state.action === "set_configs" || state.action === "append_configs") {
-    const users = await getUsers(env);
-    const user = users.find((item) => item.id === state.userId);
-    if (!user) {
-      await clearTelegramState(env, chatId);
-      return "کاربر پیدا نشد.";
-    }
-    const current = (await env.CONFIGS_KV.get(configKey(user.id))) || "";
-    const input =
-      state.action === "append_configs" ? current + "\n" + text : text;
-    const saved = await saveConfigsForUser(env, user, input, {
-      normalize: true,
-      dedupe: true,
-    });
-    user.lastConfigUpdate = saved.meta.updatedAt;
-    user.updatedAt = saved.meta.updatedAt;
-    await saveUsers(env, users);
-    await clearTelegramState(env, chatId);
-    return (
-      "کانفیگ‌های " +
-      escapeHtml(user.name) +
-      " ذخیره شد." +
-      (fromFile ? "\nمنبع: فایل" : "") +
-      "\nتعداد نهایی: " +
-      saved.stats.total +
-      "\nتکراری حذف‌شده: " +
-      saved.stats.duplicatesByContent
-    );
-  }
-
-  if (state.action === "bulk_configs") {
-    const users = await getUsers(env);
-    const selected =
-      state.target === "all"
-        ? users
-        : users.filter((user) => (state.userIds || []).includes(user.id));
-    if (!selected.length) {
-      await clearTelegramState(env, chatId);
-      return "کاربری برای اعمال انتخاب نشده است.";
-    }
-    for (const user of selected) {
-      const current = (await env.CONFIGS_KV.get(configKey(user.id))) || "";
-      const input = state.mode === "append" ? current + "\n" + text : text;
-      const saved = await saveConfigsForUser(env, user, input, {
-        normalize: true,
-        dedupe: true,
-      });
-      user.lastConfigUpdate = saved.meta.updatedAt;
-      user.updatedAt = saved.meta.updatedAt;
-    }
-    await saveUsers(env, users);
-    await clearTelegramState(env, chatId);
-    return (
-      "کانفیگ‌ها اعمال شد." +
-      (fromFile ? "\nمنبع: فایل" : "") +
-      "\nتعداد کاربران: " +
-      selected.length
-    );
-  }
-
-  return "وضعیت عملیات مشخص نیست. /cancel را ارسال کنید.";
-}
-
-function telegramUserSummaryText(user) {
-  return (
-    "کاربر: " +
-    escapeHtml(user.name) +
-    "\nشناسه: " +
-    user.id +
-    "\nوضعیت: " +
-    (user.enabled !== false ? "فعال" : "غیرفعال") +
-    "\nآخرین تغییر: " +
-    (user.updatedAt || "-")
-  );
-}
-
-async function runTelegramCommand(text, env, origin, settings) {
-  const [firstLine, ...restLines] = text.split("\n");
-  const args = firstLine.trim().split(/\s+/);
-  const command = (args[0] || "").toLowerCase();
-  const restText = restLines.join("\n").trim();
-  const url = new URL(origin);
-
-  if (command === "/start") {
-    return telegramStartText(settings.adminChatId);
-  }
-
-  if (command === "/id") {
-    return (
-      "شناسه عددی تلگرام ادمین ثبت‌شده: " +
-      escapeHtml(settings.adminChatId || "ثبت نشده") +
-      "\n\n" +
-      "توجه: USER_ID در دستورهای کانفیگ، شناسه داخلی کاربر پنل است، مثل u_xxxxx. آن را از /users یا دکمه «کاربران» بردارید."
-    );
-  }
-
-  if (command === "/help") {
-    return telegramHelpText();
-  }
-
-  if (command === "/commands") {
-    return telegramCommandsText();
-  }
-
-  if (command === "/file") {
-    return telegramFileHelpText();
-  }
-
-  if (command === "/cancel") {
-    await clearTelegramState(env, settings.adminChatId);
-    return "عملیات جاری لغو شد.";
-  }
-
-  if (command === "/newuser") {
-    await setTelegramState(env, settings.adminChatId, {
-      action: "create_user",
-    });
-    return "نام کاربر جدید را ارسال کنید.\nبرای لغو، /cancel را بزنید.";
-  }
-
-  if (command === "/bulk") {
-    return "از دکمه‌های اعمال گروهی استفاده کنید.";
-  }
-
-  if (command === "/password_change") {
-    await setTelegramState(env, settings.adminChatId, {
-      action: "change_password",
-    });
-    return "رمز عبور جدید پنل را ارسال کنید. حداقل ۸ کاراکتر.\nبرای لغو، /cancel را بزنید.";
-  }
-
-  if (command === "/adduser_help") {
-    return "برای ایجاد کاربر جدید، دستور را به این شکل ارسال کنید:\n/adduser mobile";
-  }
-
-  if (command === "/bulk_help") {
-    return "برای جایگزینی کانفیگ همه کاربران:\n/apply_all\nvless://...\n\nبرای افزودن به کانفیگ فعلی همه کاربران:\n/append_all\nvless://...\n\nبرای چند کاربر مشخص:\n/apply_users id1,id2\nvless://...";
-  }
-
-  if (command === "/users") {
-    const users = await getUsers(env);
-    if (!users.length) return "هنوز کاربری ایجاد نشده است.";
-    return users
-      .map((user) => {
-        const p = publicUser(user, url, env);
-        return (
-          "شناسه: " +
-          user.id +
-          "\nنام: " +
-          escapeHtml(user.name) +
-          "\nوضعیت: " +
-          (user.enabled !== false ? "فعال" : "غیرفعال") +
-          "\nلینک Raw: " +
-          p.links.raw +
-          "\nلینک Base64: " +
-          p.links.base64
+    if (data.startsWith("tg:bulk_toggle:")) {
+      const id = data.slice("tg:bulk_toggle:".length);
+      const state = await getTelegramState(env, chatId);
+      if (!state || state.action !== "bulk_select") {
+        await setTelegramState(env, chatId, {
+          action: "bulk_select",
+          mode: "replace",
+          userIds: [id],
+          messageId,
+        });
+        await edit(
+          t("کاربران انتخاب‌شده: 1", "Selected users: 1"),
+          telegramBulkSelectKeyboard(users, [id]),
         );
-      })
-      .join("\n\n");
+        return;
+      }
+      const selected = new Set(state.userIds || []);
+      if (selected.has(id)) selected.delete(id);
+      else selected.add(id);
+      state.userIds = Array.from(selected);
+      state.messageId = state.messageId || messageId;
+      await setTelegramState(env, chatId, state);
+      await edit(
+        t("کاربران انتخاب‌شده: ", "Selected users: ") + (state.userIds.length || 0),
+        telegramBulkSelectKeyboard(users, state.userIds),
+      );
+      return;
+    }
+
+    if (data === "tg:bulk_selected_continue") {
+      const state = await getTelegramState(env, chatId);
+      if (
+        !state ||
+        state.action !== "bulk_select" ||
+        !state.userIds ||
+        !state.userIds.length
+      ) {
+        await edit(
+          t("حداقل یک کاربر را انتخاب کنید.", "Select at least one user."),
+          telegramBulkSelectKeyboard(users, []),
+        );
+        return;
+      }
+      await setTelegramState(env, chatId, {
+        action: "bulk_configs",
+        mode: state.mode || "replace",
+        target: "selected",
+        userIds: state.userIds,
+        messageId: state.messageId || messageId,
+      });
+      await edit(
+        t("اکنون کانفیگ‌ها را به صورت متن یا فایل ارسال کنید.\nبرای لغو، /cancel را بزنید.", "Now send configs as text or a file.\nUse /cancel to cancel."),
+        telegramBulkSelectKeyboard(users, state.userIds),
+      );
+      return;
+    }
+
+    if (data === "tg:password") {
+      await setTelegramState(env, chatId, {
+        action: "change_password",
+        messageId,
+      });
+      await edit(
+        t("رمز عبور جدید پنل را ارسال کنید. حداقل ۸ کاراکتر.\nبرای لغو، /cancel را بزنید.", "Send the new panel password (at least 8 characters).\nUse /cancel to cancel."),
+        telegramInlineKeyboard(origin),
+      );
+      return;
+    }
+
+    if (data === "tg:help") {
+      await edit(telegramHelpText(), telegramInlineKeyboard(origin));
+      return;
+    }
+
+    if (data === "tg:commands") {
+      await edit(telegramCommandsText(), telegramInlineKeyboard(origin));
+      return;
+    }
+
+    if (data === "tg:file_help") {
+      await edit(telegramFileHelpText(), telegramInlineKeyboard(origin));
+      return;
+    }
   }
 
-  if (command === "/adduser") {
-    const name = cleanName(args.slice(1).join(" "));
-    if (!name) return "فرمت صحیح:\n/adduser mobile";
-    const users = await getUsers(env);
-    const user = {
-      id: generateId(),
-      name,
-      token: generateToken(),
-      enabled: true,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      lastConfigUpdate: null,
+  function normalizeTelegramText(text) {
+    const map = {
+      "🌐 زبان / Language": "/language",
+      "👥 کاربران": "/users",
+      "👥 Users": "/users",
+      "❓ راهنما": "/help",
+      "❓ Help": "/help",
+      "📋 لیست دستورات": "/commands",
+      "📋 Command list": "/commands",
+      "📄 ارسال فایل": "/file",
+      "📄 Upload file": "/file",
+      "➕ افزودن کاربر": "/newuser",
+      "➕ Add user": "/newuser",
+      "📦 اعمال گروهی": "/bulk",
+      "📦 Bulk update": "/bulk",
+      "🔐 تغییر رمز": "/password_change",
+      "🔐 Change password": "/password_change",
+      "❌ لغو": "/cancel",
+      "❌ Cancel": "/cancel",
     };
-    users.push(user);
-    await saveUsers(env, users);
-    await env.CONFIGS_KV.put(tokenKey(user.token), user.id);
-    await env.CONFIGS_KV.put(configKey(user.id), "");
-    const p = publicUser(user, url, env);
+
+    return map[text] || text;
+  }
+
+  function shouldShowTelegramInlineKeyboard(text) {
     return (
-      "کاربر ایجاد شد." +
-      "\nشناسه: " +
-      user.id +
-      "\nنام: " +
-      escapeHtml(user.name) +
-      "\nلینک Raw: " +
-      p.links.raw
+      text === "/start" ||
+      text === "/help" ||
+      text === "/commands" ||
+      text === "/file" ||
+      text === "/miniapp" ||
+      text === "/newuser" ||
+      text === "/bulk" ||
+      text === "/password_change"
     );
   }
 
-  if (command === "/deluser") {
-    const id = args[1] || "";
-    const users = await getUsers(env);
-    const index = users.findIndex((user) => user.id === id);
-    if (index === -1) return "کاربر پیدا نشد.";
-    const [removed] = users.splice(index, 1);
-    await saveUsers(env, users);
-    await env.CONFIGS_KV.delete(tokenKey(removed.token));
-    await env.CONFIGS_KV.delete(configKey(removed.id));
-    await env.CONFIGS_KV.delete(backupConfigKey(removed.id));
-    await env.CONFIGS_KV.delete(metaKey(removed.id));
-    await env.CONFIGS_KV.delete(backupMetaKey(removed.id));
-    return "کاربر حذف شد: " + escapeHtml(removed.name);
+  async function getTelegramState(env, chatId) {
+    return await getJson(env, telegramStateKey(chatId), null);
   }
 
-  if (command === "/enable" || command === "/disable") {
-    const id = args[1] || "";
-    const users = await getUsers(env);
-    const user = users.find((item) => item.id === id);
-    if (!user) return "کاربر پیدا نشد.";
-    user.enabled = command === "/enable";
-    user.updatedAt = new Date().toISOString();
-    await saveUsers(env, users);
-    return (
-      "وضعیت کاربر تغییر کرد: " +
-      escapeHtml(user.name) +
-      " - " +
-      (user.enabled ? "فعال" : "غیرفعال")
-    );
-  }
-
-  if (command === "/configs") {
-    const id = args[1] || "";
-    const user = await getUserById(env, id);
-    if (!user) return "کاربر پیدا نشد.";
-    const configs = (await env.CONFIGS_KV.get(configKey(user.id))) || "";
-    const stats = analyzeConfigs(configs);
-    const preview = configs.split("\n").filter(Boolean).slice(0, 8).join("\n");
-    return (
-      "کاربر: " +
-      escapeHtml(user.name) +
-      "\nتعداد: " +
-      stats.total +
-      "\nتکراری محتوایی: " +
-      stats.duplicatesByContent +
-      "\n\n" +
-      (preview ? escapeHtml(preview) : "کانفیگی ثبت نشده است.")
-    );
-  }
-
-  if (command === "/setconfigs" || command === "/appendconfigs") {
-    const id = args[1] || "";
-    const users = await getUsers(env);
-    const user = users.find((item) => item.id === id);
-    if (!user) return "کاربر پیدا نشد.";
-    if (!restText)
-      return "کانفیگ‌ها را از خط بعدی پیام وارد کنید، یا یک فایل متنی با کپشن همین دستور ارسال کنید.";
-    const current = (await env.CONFIGS_KV.get(configKey(user.id))) || "";
-    const input =
-      command === "/appendconfigs" ? current + "\n" + restText : restText;
-    const saved = await saveConfigsForUser(env, user, input, {
-      normalize: true,
-      dedupe: true,
-    });
-    user.lastConfigUpdate = saved.meta.updatedAt;
-    user.updatedAt = saved.meta.updatedAt;
-    await saveUsers(env, users);
-    return (
-      "کانفیگ‌های " +
-      escapeHtml(user.name) +
-      " ذخیره شد." +
-      "\nتعداد نهایی: " +
-      saved.stats.total +
-      "\nتکراری حذف‌شده: " +
-      saved.stats.duplicatesByContent
-    );
-  }
-
-  if (command === "/apply_all" || command === "/append_all") {
-    if (!restText)
-      return "کانفیگ‌ها را از خط بعدی پیام وارد کنید، یا یک فایل متنی با کپشن همین دستور ارسال کنید.";
-    const users = await getUsers(env);
-    if (!users.length) return "کاربری وجود ندارد.";
-    for (const user of users) {
-      const current = (await env.CONFIGS_KV.get(configKey(user.id))) || "";
-      const input =
-        command === "/append_all" ? current + "\n" + restText : restText;
-      const saved = await saveConfigsForUser(env, user, input, {
-        normalize: true,
-        dedupe: true,
-      });
-      user.lastConfigUpdate = saved.meta.updatedAt;
-      user.updatedAt = saved.meta.updatedAt;
-    }
-    await saveUsers(env, users);
-    return (
-      "کانفیگ‌ها برای همه کاربران اعمال شد. تعداد کاربران: " + users.length
-    );
-  }
-
-  if (command === "/apply_users" || command === "/append_users") {
-    const ids = String(args[1] || "")
-      .split(",")
-      .map((item) => item.trim())
-      .filter(Boolean);
-    if (!ids.length)
-      return "فرمت صحیح:\n/apply_users id1,id2\nسپس کانفیگ‌ها از خط بعدی یا فایل با همین کپشن";
-    if (!restText)
-      return "کانفیگ‌ها را از خط بعدی پیام وارد کنید، یا یک فایل متنی با کپشن همین دستور ارسال کنید.";
-    const users = await getUsers(env);
-    const selected = users.filter((user) => ids.includes(user.id));
-    if (!selected.length) return "هیچ کاربری با این شناسه‌ها پیدا نشد.";
-    for (const user of selected) {
-      const current = (await env.CONFIGS_KV.get(configKey(user.id))) || "";
-      const input =
-        command === "/append_users" ? current + "\n" + restText : restText;
-      const saved = await saveConfigsForUser(env, user, input, {
-        normalize: true,
-        dedupe: true,
-      });
-      user.lastConfigUpdate = saved.meta.updatedAt;
-      user.updatedAt = saved.meta.updatedAt;
-    }
-    await saveUsers(env, users);
-    return (
-      "کانفیگ‌ها برای کاربران انتخاب‌شده اعمال شد. تعداد: " + selected.length
-    );
-  }
-
-  if (command === "/password") {
-    const newPassword = args.slice(1).join(" ");
-    if (newPassword.length < 8)
-      return "رمز عبور جدید باید حداقل ۸ کاراکتر باشد.";
+  async function setTelegramState(env, chatId, state) {
     await env.CONFIGS_KV.put(
-      ADMIN_PASSWORD_HASH_KEY,
-      await sha256Hex(newPassword),
+      telegramStateKey(chatId),
+      JSON.stringify({ ...state, updatedAt: new Date().toISOString() }),
+      { expirationTtl: 3600 },
     );
-    await env.CONFIGS_KV.put(
-      ADMIN_PASSWORD_META_KEY,
-      JSON.stringify({
+  }
+
+  async function clearTelegramState(env, chatId) {
+    await env.CONFIGS_KV.delete(telegramStateKey(chatId));
+  }
+
+  function telegramStateKey(chatId) {
+    return TELEGRAM_STATE_PREFIX + chatId;
+  }
+
+  async function handleTelegramStateInput(
+    inputText,
+    state,
+    chatId,
+    env,
+    settings,
+    origin,
+    fromFile = false,
+  ) {
+    const text = String(inputText || "").trim();
+    if (!text) return t("متن دریافتی خالی است.", "The received text is empty.");
+
+    if (state.action === "create_user") {
+      const name = cleanName(text);
+      if (!name) return t("نام کاربر معتبر نیست.", "Invalid user name.");
+      const users = await getUsers(env);
+      const user = {
+        id: generateId(),
+        name,
+        token: generateToken(),
+        enabled: true,
+        createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-        source: "telegram",
-      }),
-    );
-    return "رمز عبور پنل تغییر کرد.";
+        lastConfigUpdate: null,
+      };
+      users.push(user);
+      await saveUsers(env, users);
+      await env.CONFIGS_KV.put(tokenKey(user.token), user.id);
+      await env.CONFIGS_KV.put(configKey(user.id), "");
+      await clearTelegramState(env, chatId);
+      const p = publicUser(user, new URL(origin), env);
+      return (
+        t("کاربر ایجاد شد.\nنام: ", "User created.\nName: ") +
+        escapeHtml(user.name) +
+        t("\nشناسه: ", "\nID: ") +
+        user.id +
+        t("\nلینک Raw:\n", "\nRaw link:\n") +
+        p.links.raw
+      );
+    }
+
+    if (state.action === "rename_user") {
+      const users = await getUsers(env);
+      const user = users.find((item) => item.id === state.userId);
+      if (!user) {
+        await clearTelegramState(env, chatId);
+        return t("کاربر پیدا نشد.", "User not found.");
+      }
+      const name = cleanName(text);
+      if (!name) return t("نام جدید معتبر نیست.", "Invalid new name.");
+      user.name = name;
+      user.updatedAt = new Date().toISOString();
+      await saveUsers(env, users);
+      await clearTelegramState(env, chatId);
+      return t("نام کاربر تغییر کرد: ", "User renamed: ") + escapeHtml(user.name);
+    }
+
+    if (state.action === "change_password") {
+      if (text.length < 8) return t("رمز عبور جدید باید حداقل ۸ کاراکتر باشد.", "The new password must contain at least 8 characters.");
+      await env.CONFIGS_KV.put(ADMIN_PASSWORD_HASH_KEY, await sha256Hex(text));
+      await env.CONFIGS_KV.put(
+        ADMIN_PASSWORD_META_KEY,
+        JSON.stringify({
+          updatedAt: new Date().toISOString(),
+          source: "telegram-button",
+        }),
+      );
+      await clearTelegramState(env, chatId);
+      return t("رمز عبور پنل تغییر کرد.", "Panel password changed.");
+    }
+
+    if (state.action === "set_configs" || state.action === "append_configs") {
+      const users = await getUsers(env);
+      const user = users.find((item) => item.id === state.userId);
+      if (!user) {
+        await clearTelegramState(env, chatId);
+        return t("کاربر پیدا نشد.", "User not found.");
+      }
+      const current = (await env.CONFIGS_KV.get(configKey(user.id))) || "";
+      const input =
+        state.action === "append_configs" ? current + "\n" + text : text;
+      const saved = await saveConfigsForUser(env, user, input, {
+        normalize: true,
+        dedupe: true,
+      });
+      user.lastConfigUpdate = saved.meta.updatedAt;
+      user.updatedAt = saved.meta.updatedAt;
+      await saveUsers(env, users);
+      await clearTelegramState(env, chatId);
+      return (
+        t("کانفیگ‌های ", "Configs for ") +
+        escapeHtml(user.name) +
+        t(" ذخیره شد.", " saved.") +
+        (fromFile ? t("\nمنبع: فایل", "\nSource: file") : "") +
+        t("\nتعداد نهایی: ", "\nFinal count: ") +
+        saved.stats.total +
+        t("\nتکراری حذف‌شده: ", "\nDuplicates removed: ") +
+        saved.stats.duplicatesByContent
+      );
+    }
+
+    if (state.action === "bulk_configs") {
+      const users = await getUsers(env);
+      const selected =
+        state.target === "all"
+          ? users
+          : users.filter((user) => (state.userIds || []).includes(user.id));
+      if (!selected.length) {
+        await clearTelegramState(env, chatId);
+        return t("کاربری برای اعمال انتخاب نشده است.", "No users selected for this update.");
+      }
+      for (const user of selected) {
+        const current = (await env.CONFIGS_KV.get(configKey(user.id))) || "";
+        const input = state.mode === "append" ? current + "\n" + text : text;
+        const saved = await saveConfigsForUser(env, user, input, {
+          normalize: true,
+          dedupe: true,
+        });
+        user.lastConfigUpdate = saved.meta.updatedAt;
+        user.updatedAt = saved.meta.updatedAt;
+      }
+      await saveUsers(env, users);
+      await clearTelegramState(env, chatId);
+      return (
+        t("کانفیگ‌ها اعمال شد.", "Configs applied.") +
+        (fromFile ? t("\nمنبع: فایل", "\nSource: file") : "") +
+        t("\nتعداد کاربران: ", "\nUser count: ") +
+        selected.length
+      );
+    }
+
+    return t("وضعیت عملیات مشخص نیست. /cancel را ارسال کنید.", "Unknown operation state. Send /cancel.");
   }
 
-  if (command === "/webhook") {
-    const result = await configureTelegramEntryPoints(settings, origin);
+  function telegramUserSummaryText(user) {
     return (
-      "وبهوک، منوی ربات، دکمه مینی‌اپ و لیست دستورها دوباره تنظیم شد.\n" +
-      escapeHtml(JSON.stringify(result))
+      t("کاربر: ", "User: ") +
+      escapeHtml(user.name) +
+      t("\nشناسه: ", "\nID: ") +
+      user.id +
+      t("\nوضعیت: ", "\nStatus: ") +
+      (user.enabled !== false ? t("فعال", "Enabled") : t("غیرفعال", "Disabled")) +
+      t("\nآخرین تغییر: ", "\nLast updated: ") +
+      (user.updatedAt || "-")
     );
   }
 
-  return "دستور شناخته نشد. برای راهنما /help را ارسال کنید.";
-}
+  async function runTelegramCommand(text, env, origin, settings) {
+    const [firstLine, ...restLines] = text.split("\n");
+    const args = firstLine.trim().split(/\s+/);
+    const command = (args[0] || "").toLowerCase();
+    const restText = restLines.join("\n").trim();
+    const url = new URL(origin);
 
-function telegramStartText() {
-  return "ربات مدیریت کانفیگ‌ها فعال است.\n\nاز دکمه‌های پایین می‌توانید کاربران، کانفیگ‌ها و تنظیمات گروهی را مدیریت کنید.\nبرای راهنمای کامل، دکمه «❓ راهنما» یا دستور /help را بزنید. لیست دستورها نیز با زدن / در تلگرام نمایش داده می‌شود.";
-}
+    if (command === "/start") {
+      return telegramStartText(settings.adminChatId);
+    }
 
-function telegramHelpText() {
-  return (
-    "راهنمای مدیریت ربات\n\n" +
-    "📝 ارسال کانفیگ متنی:\n" +
-    "/setconfigs USER_ID\n" +
-    "vless://...\n" +
-    "trojan://...\n\n" +
-    "📄 ارسال کانفیگ با فایل:\n" +
-    "یک فایل txt/conf ارسال کنید و در Caption آن دستور مورد نظر را بنویسید. مثال:\n" +
-    "/setconfigs USER_ID\n\n" +
-    "📋 برای دیدن لیست کامل دستورها، /commands را ارسال کنید."
-  );
-}
+    if (command === "/id") {
+      return (
+        t("شناسه عددی تلگرام ادمین ثبت‌شده: ", "Registered admin Telegram ID: ") +
+        escapeHtml(settings.adminChatId || t("ثبت نشده", "Not set")) +
+        "\n\n" +
+        t("توجه: USER_ID در دستورهای کانفیگ، شناسه داخلی کاربر پنل است، مثل u_xxxxx. آن را از /users یا دکمه «کاربران» بردارید.", "USER_ID in config commands is the panel's internal user ID, such as u_xxxxx. Get it from /users or the Users button.")
+      );
+    }
 
-function telegramCommandsText() {
-  return (
-    "لیست دستورهای ربات\n\n" +
-    "/start - نمایش منوی اصلی\n" +
-    "/help - راهنمای کامل استفاده\n" +
-    "/commands - توضیح دستورها\n" +
-    "/file - راهنمای ارسال فایل کانفیگ\n" +
-    "/users - باز کردن مدیریت کاربران با دکمه\n" +
-    "/newuser - ایجاد کاربر به صورت مرحله‌ای\n" +
-    "/bulk - اعمال گروهی با دکمه\n" +
-    "/cancel - لغو عملیات جاری\n" +
-    "/setconfigs ID - جایگزینی کانفیگ کاربر\n" +
-    "/appendconfigs ID - افزودن کانفیگ به کاربر\n" +
-    "/apply_all - جایگزینی کانفیگ همه کاربران\n" +
-    "/append_all - افزودن کانفیگ به همه کاربران\n" +
-    "/apply_users id1,id2 - جایگزینی برای چند کاربر\n" +
-    "/append_users id1,id2 - افزودن برای چند کاربر\n" +
-    "/password NEW_PASSWORD - تغییر رمز پنل\n" +
-    "/webhook - تنظیم مجدد وبهوک، منو و کامندها"
-  );
-}
+    if (command === "/help") {
+      return telegramHelpText();
+    }
 
-function telegramFileHelpText() {
-  return (
-    "راهنمای ارسال فایل کانفیگ\n\n" +
-    "۱. یک فایل متنی با پسوند txt یا conf آماده کنید.\n" +
-    "۲. فایل را برای ربات ارسال کنید.\n" +
-    "۳. در قسمت Caption فایل، یکی از دستورهای زیر را بنویسید:\n\n" +
-    "برای جایگزینی کانفیگ یک کاربر:\n" +
-    "/setconfigs USER_ID\n\n" +
-    "برای افزودن به کانفیگ یک کاربر:\n" +
-    "/appendconfigs USER_ID\n\n" +
-    "برای جایگزینی همه کاربران:\n" +
-    "/apply_all\n\n" +
-    "برای افزودن به همه کاربران:\n" +
-    "/append_all\n\n" +
-    "برای چند کاربر مشخص:\n" +
-    "/apply_users id1,id2\n\n" +
-    "بعد از دریافت فایل، کانفیگ‌های تکراری حتی با نام متفاوت حذف می‌شوند."
-  );
+    if (command === "/commands") {
+      return telegramCommandsText();
+    }
+
+    if (command === "/file") {
+      return telegramFileHelpText();
+    }
+
+    if (command === "/cancel") {
+      await clearTelegramState(env, settings.adminChatId);
+      return t("عملیات جاری لغو شد.", "Current operation cancelled.");
+    }
+
+    if (command === "/newuser") {
+      await setTelegramState(env, settings.adminChatId, {
+        action: "create_user",
+      });
+      return t("نام کاربر جدید را ارسال کنید.\nبرای لغو، /cancel را بزنید.", "Send the new user's name.\nUse /cancel to cancel.");
+    }
+
+    if (command === "/bulk") {
+      return t("از دکمه‌های اعمال گروهی استفاده کنید.", "Use the bulk update buttons.");
+    }
+
+    if (command === "/password_change") {
+      await setTelegramState(env, settings.adminChatId, {
+        action: "change_password",
+      });
+      return t("رمز عبور جدید پنل را ارسال کنید. حداقل ۸ کاراکتر.\nبرای لغو، /cancel را بزنید.", "Send the new panel password (at least 8 characters).\nUse /cancel to cancel.");
+    }
+
+    if (command === "/adduser_help") {
+      return t("برای ایجاد کاربر جدید، دستور را به این شکل ارسال کنید:\n/adduser mobile", "To create a user, send:\n/adduser mobile");
+    }
+
+    if (command === "/bulk_help") {
+      return t("برای جایگزینی کانفیگ همه کاربران:\n/apply_all\nvless://...\n\nبرای افزودن به کانفیگ فعلی همه کاربران:\n/append_all\nvless://...\n\nبرای چند کاربر مشخص:\n/apply_users id1,id2\nvless://...", "To replace all users' configs:\n/apply_all\nvless://...\n\nTo append to all users' configs:\n/append_all\nvless://...\n\nFor selected users:\n/apply_users id1,id2\nvless://...");
+    }
+
+    if (command === "/users") {
+      const users = await getUsers(env);
+      if (!users.length) return t("هنوز کاربری ایجاد نشده است.", "No users have been created yet.");
+      return users
+        .map((user) => {
+          const p = publicUser(user, url, env);
+          return (
+            t("شناسه: ", "ID: ") +
+            user.id +
+            t("\nنام: ", "\nName: ") +
+            escapeHtml(user.name) +
+            t("\nوضعیت: ", "\nStatus: ") +
+            (user.enabled !== false ? t("فعال", "Enabled") : t("غیرفعال", "Disabled")) +
+            t("\nلینک Raw: ", "\nRaw link: ") +
+            p.links.raw +
+            t("\nلینک Base64: ", "\nBase64 link: ") +
+            p.links.base64
+          );
+        })
+        .join("\n\n");
+    }
+
+    if (command === "/adduser") {
+      const name = cleanName(args.slice(1).join(" "));
+      if (!name) return t("فرمت صحیح:\n/adduser mobile", "Correct format:\n/adduser mobile");
+      const users = await getUsers(env);
+      const user = {
+        id: generateId(),
+        name,
+        token: generateToken(),
+        enabled: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        lastConfigUpdate: null,
+      };
+      users.push(user);
+      await saveUsers(env, users);
+      await env.CONFIGS_KV.put(tokenKey(user.token), user.id);
+      await env.CONFIGS_KV.put(configKey(user.id), "");
+      const p = publicUser(user, url, env);
+      return (
+        t("کاربر ایجاد شد.", "User created.") +
+        t("\nشناسه: ", "\nID: ") +
+        user.id +
+        t("\nنام: ", "\nName: ") +
+        escapeHtml(user.name) +
+        t("\nلینک Raw: ", "\nRaw link: ") +
+        p.links.raw
+      );
+    }
+
+    if (command === "/deluser") {
+      const id = args[1] || "";
+      const users = await getUsers(env);
+      const index = users.findIndex((user) => user.id === id);
+      if (index === -1) return t("کاربر پیدا نشد.", "User not found.");
+      const [removed] = users.splice(index, 1);
+      await saveUsers(env, users);
+      await env.CONFIGS_KV.delete(tokenKey(removed.token));
+      await env.CONFIGS_KV.delete(configKey(removed.id));
+      await env.CONFIGS_KV.delete(backupConfigKey(removed.id));
+      await env.CONFIGS_KV.delete(metaKey(removed.id));
+      await env.CONFIGS_KV.delete(backupMetaKey(removed.id));
+      return t("کاربر حذف شد: ", "User deleted: ") + escapeHtml(removed.name);
+    }
+
+    if (command === "/enable" || command === "/disable") {
+      const id = args[1] || "";
+      const users = await getUsers(env);
+      const user = users.find((item) => item.id === id);
+      if (!user) return t("کاربر پیدا نشد.", "User not found.");
+      user.enabled = command === "/enable";
+      user.updatedAt = new Date().toISOString();
+      await saveUsers(env, users);
+      return (
+        t("وضعیت کاربر تغییر کرد: ", "User status changed: ") +
+        escapeHtml(user.name) +
+        " - " +
+        (user.enabled ? t("فعال", "Enabled") : t("غیرفعال", "Disabled"))
+      );
+    }
+
+    if (command === "/configs") {
+      const id = args[1] || "";
+      const user = await getUserById(env, id);
+      if (!user) return t("کاربر پیدا نشد.", "User not found.");
+      const configs = (await env.CONFIGS_KV.get(configKey(user.id))) || "";
+      const stats = analyzeConfigs(configs);
+      const preview = configs.split("\n").filter(Boolean).slice(0, 8).join("\n");
+      return (
+        t("کاربر: ", "User: ") +
+        escapeHtml(user.name) +
+        t("\nتعداد: ", "\nCount: ") +
+        stats.total +
+        t("\nتکراری محتوایی: ", "\nContent duplicates: ") +
+        stats.duplicatesByContent +
+        "\n\n" +
+        (preview ? escapeHtml(preview) : t("کانفیگی ثبت نشده است.", "No configs saved."))
+      );
+    }
+
+    if (command === "/setconfigs" || command === "/appendconfigs") {
+      const id = args[1] || "";
+      const users = await getUsers(env);
+      const user = users.find((item) => item.id === id);
+      if (!user) return t("کاربر پیدا نشد.", "User not found.");
+      if (!restText)
+        return t("کانفیگ‌ها را از خط بعدی پیام وارد کنید، یا یک فایل متنی با کپشن همین دستور ارسال کنید.", "Enter configs on the next line, or send a text file with this command as its caption.");
+      const current = (await env.CONFIGS_KV.get(configKey(user.id))) || "";
+      const input =
+        command === "/appendconfigs" ? current + "\n" + restText : restText;
+      const saved = await saveConfigsForUser(env, user, input, {
+        normalize: true,
+        dedupe: true,
+      });
+      user.lastConfigUpdate = saved.meta.updatedAt;
+      user.updatedAt = saved.meta.updatedAt;
+      await saveUsers(env, users);
+      return (
+        t("کانفیگ‌های ", "Configs for ") +
+        escapeHtml(user.name) +
+        t(" ذخیره شد.", " saved.") +
+        t("\nتعداد نهایی: ", "\nFinal count: ") +
+        saved.stats.total +
+        t("\nتکراری حذف‌شده: ", "\nDuplicates removed: ") +
+        saved.stats.duplicatesByContent
+      );
+    }
+
+    if (command === "/apply_all" || command === "/append_all") {
+      if (!restText)
+        return t("کانفیگ‌ها را از خط بعدی پیام وارد کنید، یا یک فایل متنی با کپشن همین دستور ارسال کنید.", "Enter configs on the next line, or send a text file with this command as its caption.");
+      const users = await getUsers(env);
+      if (!users.length) return t("کاربری وجود ندارد.", "No users exist.");
+      for (const user of users) {
+        const current = (await env.CONFIGS_KV.get(configKey(user.id))) || "";
+        const input =
+          command === "/append_all" ? current + "\n" + restText : restText;
+        const saved = await saveConfigsForUser(env, user, input, {
+          normalize: true,
+          dedupe: true,
+        });
+        user.lastConfigUpdate = saved.meta.updatedAt;
+        user.updatedAt = saved.meta.updatedAt;
+      }
+      await saveUsers(env, users);
+      return (
+        t("کانفیگ‌ها برای همه کاربران اعمال شد. تعداد کاربران: ", "Configs applied to all users. User count: ") + users.length
+      );
+    }
+
+    if (command === "/apply_users" || command === "/append_users") {
+      const ids = String(args[1] || "")
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean);
+      if (!ids.length)
+        return t("فرمت صحیح:\n/apply_users id1,id2\nسپس کانفیگ‌ها از خط بعدی یا فایل با همین کپشن", "Correct format:\n/apply_users id1,id2\nThen configs on the next line, or a file with this caption.");
+      if (!restText)
+        return t("کانفیگ‌ها را از خط بعدی پیام وارد کنید، یا یک فایل متنی با کپشن همین دستور ارسال کنید.", "Enter configs on the next line, or send a text file with this command as its caption.");
+      const users = await getUsers(env);
+      const selected = users.filter((user) => ids.includes(user.id));
+      if (!selected.length) return t("هیچ کاربری با این شناسه‌ها پیدا نشد.", "No users found with these IDs.");
+      for (const user of selected) {
+        const current = (await env.CONFIGS_KV.get(configKey(user.id))) || "";
+        const input =
+          command === "/append_users" ? current + "\n" + restText : restText;
+        const saved = await saveConfigsForUser(env, user, input, {
+          normalize: true,
+          dedupe: true,
+        });
+        user.lastConfigUpdate = saved.meta.updatedAt;
+        user.updatedAt = saved.meta.updatedAt;
+      }
+      await saveUsers(env, users);
+      return (
+        t("کانفیگ‌ها برای کاربران انتخاب‌شده اعمال شد. تعداد: ", "Configs applied to selected users. Count: ") + selected.length
+      );
+    }
+
+    if (command === "/password") {
+      const newPassword = args.slice(1).join(" ");
+      if (newPassword.length < 8)
+        return t("رمز عبور جدید باید حداقل ۸ کاراکتر باشد.", "The new password must contain at least 8 characters.");
+      await env.CONFIGS_KV.put(
+        ADMIN_PASSWORD_HASH_KEY,
+        await sha256Hex(newPassword),
+      );
+      await env.CONFIGS_KV.put(
+        ADMIN_PASSWORD_META_KEY,
+        JSON.stringify({
+          updatedAt: new Date().toISOString(),
+          source: "telegram",
+        }),
+      );
+      return t("رمز عبور پنل تغییر کرد.", "Panel password changed.");
+    }
+
+    if (command === "/webhook") {
+      const result = await configureTelegramEntryPoints(settings, origin);
+      return (
+        t("وبهوک، منوی ربات، دکمه مینی‌اپ و لیست دستورها دوباره تنظیم شد.\n", "Webhook and bot commands have been reset.\n") +
+        escapeHtml(JSON.stringify(result))
+      );
+    }
+
+    return t("دستور شناخته نشد. برای راهنما /help را ارسال کنید.", "Unknown command. Send /help for help.");
+  }
+
+  function telegramStartText() {
+    return t("ربات مدیریت کانفیگ‌ها فعال است.\n\nاز دکمه‌های پایین می‌توانید کاربران، کانفیگ‌ها و تنظیمات گروهی را مدیریت کنید.\nبرای راهنمای کامل، دکمه «❓ راهنما» یا دستور /help را بزنید. لیست دستورها نیز با زدن / در تلگرام نمایش داده می‌شود.", "The config management bot is active.\n\nUse the buttons below to manage users, configs and bulk updates.\nFor help, press Help or send /help. Type / in Telegram to see commands.");
+  }
+
+  function telegramHelpText() {
+    return (
+      t("راهنمای مدیریت ربات\n\n", "Bot management help\n\n") +
+      t("📝 ارسال کانفیگ متنی:\n", "📝 Send configs as text:\n") +
+      "/setconfigs USER_ID\n" +
+      "vless://...\n" +
+      "trojan://...\n\n" +
+      t("📄 ارسال کانفیگ با فایل:\n", "📄 Send configs as a file:\n") +
+      t("یک فایل txt/conf ارسال کنید و در Caption آن دستور مورد نظر را بنویسید. مثال:\n", "Send a txt/conf file with the desired command as its caption. Example:\n") +
+      "/setconfigs USER_ID\n\n" +
+      t("📋 برای دیدن لیست کامل دستورها، /commands را ارسال کنید.", "📋 Send /commands to see all commands.")
+    );
+  }
+
+  function telegramCommandsText() {
+    return (
+      t("لیست دستورهای ربات\n\n", "Bot commands\n\n") +
+      t("/language - تغییر زبان ربات\n", "/language - Change bot language\n") +
+      t("/start - نمایش منوی اصلی\n", "/start - Show main menu\n") +
+      t("/help - راهنمای کامل استفاده\n", "/help - Full usage help\n") +
+      t("/commands - توضیح دستورها\n", "/commands - Command descriptions\n") +
+      t("/file - راهنمای ارسال فایل کانفیگ\n", "/file - Config file upload help\n") +
+      t("/users - باز کردن مدیریت کاربران با دکمه\n", "/users - Open user management buttons\n") +
+      t("/newuser - ایجاد کاربر به صورت مرحله‌ای\n", "/newuser - Create a user step by step\n") +
+      t("/bulk - اعمال گروهی با دکمه\n", "/bulk - Bulk update buttons\n") +
+      t("/cancel - لغو عملیات جاری\n", "/cancel - Cancel current operation\n") +
+      t("/setconfigs ID - جایگزینی کانفیگ کاربر\n", "/setconfigs ID - Replace user configs\n") +
+      t("/appendconfigs ID - افزودن کانفیگ به کاربر\n", "/appendconfigs ID - Append user configs\n") +
+      t("/apply_all - جایگزینی کانفیگ همه کاربران\n", "/apply_all - Replace all users' configs\n") +
+      t("/append_all - افزودن کانفیگ به همه کاربران\n", "/append_all - Append configs to all users\n") +
+      t("/apply_users id1,id2 - جایگزینی برای چند کاربر\n", "/apply_users id1,id2 - Replace selected users' configs\n") +
+      t("/append_users id1,id2 - افزودن برای چند کاربر\n", "/append_users id1,id2 - Append configs to selected users\n") +
+      t("/password NEW_PASSWORD - تغییر رمز پنل\n", "/password NEW_PASSWORD - Change panel password\n") +
+      t("/webhook - تنظیم مجدد وبهوک، منو و کامندها", "/webhook - Reset webhook and commands")
+    );
+  }
+
+  function telegramFileHelpText() {
+    return (
+      t("راهنمای ارسال فایل کانفیگ\n\n", "Config file upload help\n\n") +
+      t("۱. یک فایل متنی با پسوند txt یا conf آماده کنید.\n", "1. Prepare a text file with a txt or conf extension.\n") +
+      t("۲. فایل را برای ربات ارسال کنید.\n", "2. Send the file to the bot.\n") +
+      t("۳. در قسمت Caption فایل، یکی از دستورهای زیر را بنویسید:\n\n", "3. Set one of these commands as the file caption:\n\n") +
+      t("برای جایگزینی کانفیگ یک کاربر:\n", "To replace a user's configs:\n") +
+      "/setconfigs USER_ID\n\n" +
+      t("برای افزودن به کانفیگ یک کاربر:\n", "To append configs to a user:\n") +
+      "/appendconfigs USER_ID\n\n" +
+      t("برای جایگزینی همه کاربران:\n", "To replace all users' configs:\n") +
+      "/apply_all\n\n" +
+      t("برای افزودن به همه کاربران:\n", "To append configs to all users:\n") +
+      "/append_all\n\n" +
+      t("برای چند کاربر مشخص:\n", "For selected users:\n") +
+      "/apply_users id1,id2\n\n" +
+      t("بعد از دریافت فایل، کانفیگ‌های تکراری حتی با نام متفاوت حذف می‌شوند.", "After receiving the file, duplicate configs are removed, including those with different names.")
+    );
+  }
+
+  return { configureTelegramEntryPoints, handleTelegramUpdate, sendTest };
 }
 
 function configKey(userId) {
