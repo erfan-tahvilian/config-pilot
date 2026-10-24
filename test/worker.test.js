@@ -5,12 +5,12 @@ import worker from "../worker.js";
 
 function fixture() {
   const store = new Map();
-  const env = { CONFIGS_KV: {
+  const env = { ADMIN_PASSWORD: "test-admin-password", CONFIGS_KV: {
     get: async (key) => store.get(key) ?? null,
     put: async (key, value) => { store.set(key, value); },
     delete: async (key) => { store.delete(key); },
   } };
-  async function api(path, body, password = "admin") {
+  async function api(path, body, password = "test-admin-password") {
     const response = await worker.fetch(new Request("https://panel.test" + path, {
       method: body === undefined ? "GET" : "POST",
       headers: { authorization: "Bearer " + password, "content-type": "application/json" },
@@ -103,6 +103,23 @@ test("both copy entry points require admin authentication", async () => {
   assert.equal((await f.api("/api/admin/users/create", { name: "Denied", sourceUserId: "source" }, "wrong")).status, 401);
   assert.equal((await f.api("/api/admin/users/configs/copy", { id: "target", sourceUserId: "source" }, "wrong")).status, 401);
   assert.equal(f.store.has("users_v2"), false);
+});
+
+test("fresh installations require an initial secret and never accept a shared default", async () => {
+  const f = fixture();
+  delete f.env.ADMIN_PASSWORD;
+  assert.equal((await f.api("/api/admin/login", {}, "admin")).status, 401);
+  assert.equal(f.store.has("admin_password_hash_v1"), false);
+  f.env.ADMIN_PASSWORD = "short";
+  assert.equal((await f.api("/api/admin/login", {}, "short")).status, 401);
+  f.env.ADMIN_PASSWORD = "unique-initial-password";
+  assert.equal((await f.api("/api/admin/login", {}, "admin")).status, 401);
+  assert.equal((await f.api("/api/admin/login", {}, "unique-initial-password")).status, 200);
+  assert.match(f.store.get("admin_password_hash_v1"), /^[a-f0-9]{64}$/);
+  assert.equal(JSON.stringify([...f.store]).includes("unique-initial-password"), false);
+  f.env.ADMIN_PASSWORD = "replacement-secret";
+  assert.equal((await f.api("/api/admin/login", {}, "replacement-secret")).status, 401);
+  assert.equal((await f.api("/api/admin/login", {}, "unique-initial-password")).status, 200);
 });
 
 test("admin and Mini App HTML contain parseable browser scripts", async () => {

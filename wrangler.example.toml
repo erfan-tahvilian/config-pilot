@@ -1,0 +1,15 @@
+name = "config-pilot"
+main = "worker.js"
+compatibility_date = "2026-06-27"
+workers_dev = true
+
+[[kv_namespaces]]
+binding = "CONFIGS_KV"
+id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+
+# Optional: set this only when using your own public domain.
+# [vars]
+# PUBLIC_BASE_URL = "https://configs.example.com"
+
+# Set the initial password using `npx wrangler secret put ADMIN_PASSWORD`.
+# Never store real passwords, API tokens, or bot tokens in this file.

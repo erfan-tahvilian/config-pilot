@@ -7,7 +7,7 @@ function fixture(context) {
   const settings = { enabled: true, botToken: "test-bot", adminChatId: adminId, webhookSecret: "test-secret" };
   const store = new Map([["telegram_settings_v1", JSON.stringify(settings)]]);
   const calls = [];
-  const env = { CONFIGS_KV: {
+  const env = { ADMIN_PASSWORD: "test-admin-password", CONFIGS_KV: {
     get: async key => store.get(key) ?? null,
     put: async (key, value) => { store.set(key, value); },
     delete: async key => { store.delete(key); },
@@ -30,7 +30,7 @@ function fixture(context) {
   const last = () => outgoing().at(-1).body;
   const api = async (path, body) => {
     const response = await worker.fetch(new Request("https://panel.test" + path, {
-      method: "POST", headers: { authorization: "Bearer admin", "content-type": "application/json" }, body: JSON.stringify(body),
+      method: "POST", headers: { authorization: "Bearer test-admin-password", "content-type": "application/json" }, body: JSON.stringify(body),
     }), env);
     assert.equal(response.status, 200);
     return response.json();

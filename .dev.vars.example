@@ -1,0 +1,2 @@
+# Local development only. Copy this file to .dev.vars and replace the value.
+ADMIN_PASSWORD="replace-with-a-unique-long-password"

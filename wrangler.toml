@@ -1,8 +1,0 @@
-name = "config"
-main = "worker.js"
-compatibility_date = "2026-06-27"
-workers_dev = false
-
-[[kv_namespaces]]
-binding = "CONFIGS_KV"
-id = "b110795248404aaf83e893e467cf320e"

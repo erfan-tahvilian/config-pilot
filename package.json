@@ -2,11 +2,16 @@
   "name": "config-pilot",
   "version": "1.0.0",
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
+    "configure": "node scripts/configure.mjs",
+    "dev": "wrangler dev --local",
     "test": "node --test",
     "deploy": "wrangler deploy"
   },
   "devDependencies": {
-    "wrangler": "latest"
+    "wrangler": "4.152.0"
   }
 }

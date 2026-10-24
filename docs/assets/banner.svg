@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="360" viewBox="0 0 1280 360" role="img" aria-labelledby="title desc">
+  <title id="title">Config Pilot</title>
+  <desc id="desc">Your configs. Your cloud. Your control. Cloudflare Workers, Telegram, Persian and English.</desc>
+  <defs>
+    <linearGradient id="bg" x2="1" y2="1"><stop stop-color="#090e20"/><stop offset="1" stop-color="#172347"/></linearGradient>
+    <linearGradient id="accent" x2="1" y2="1"><stop stop-color="#9375ff"/><stop offset="1" stop-color="#36d5ee"/></linearGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M40 0H0V40" fill="none" stroke="#566595" stroke-opacity=".15"/></pattern>
+  </defs>
+  <rect width="1280" height="360" rx="28" fill="url(#bg)"/>
+  <rect width="1280" height="360" rx="28" fill="url(#grid)"/>
+  <circle cx="1140" cy="40" r="200" fill="#7146e0" opacity=".12"/>
+  <circle cx="1080" cy="360" r="200" fill="#13c9dc" opacity=".07"/>
+  <rect x="64" y="66" width="118" height="118" rx="30" fill="url(#accent)"/>
+  <path d="M123 88c-12 9-24 13-37 15v29c0 23 15 39 37 47 22-8 37-24 37-47v-29c-13-2-25-6-37-15Z" fill="none" stroke="white" stroke-width="5" stroke-linejoin="round"/>
+  <path d="m106 131 11 11 24-27" fill="none" stroke="white" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="214" y="101" fill="#75dcf3" font-family="Segoe UI,Arial,sans-serif" font-size="15" letter-spacing="4">SELF-HOSTED CONFIG MANAGEMENT</text>
+  <text x="210" y="168" fill="#f3f5ff" font-family="Segoe UI,Arial,sans-serif" font-size="66" font-weight="700" letter-spacing="-2">Config Pilot</text>
+  <text x="66" y="240" fill="#c5cee8" font-family="Segoe UI,Arial,sans-serif" font-size="26">Your configs. Your cloud. Your control.</text>
+  <g font-family="Segoe UI,Arial,sans-serif" font-size="15" fill="#cad5f5">
+    <rect x="66" y="278" width="185" height="36" rx="18" fill="#253355"/><text x="88" y="302">Cloudflare Workers</text>
+    <rect x="263" y="278" width="151" height="36" rx="18" fill="#253355"/><text x="285" y="302">Telegram ready</text>
+    <rect x="426" y="278" width="182" height="36" rx="18" fill="#253355"/><text x="448" y="302">Persian + English</text>
+  </g>
+  <g transform="translate(956 95)" fill="none" stroke="url(#accent)" stroke-width="3" opacity=".8">
+    <rect width="208" height="166" rx="20"/><path d="M0 42h208M26 21h5m12 0h5m12 0h5M28 75h54m-54 24h98m-98 24h72" stroke-linecap="round"/>
+    <path d="m153 92 13 13 24-28" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

@@ -5,7 +5,6 @@ const TELEGRAM_SETTINGS_KEY = "telegram_settings_v1";
 const TELEGRAM_STATE_PREFIX = "telegram_state:";
 const TELEGRAM_CONTROL_MESSAGE_PREFIX = "telegram_control_message:";
 const MAX_CONFIG_BYTES = 5 * 1024 * 1024;
-const DEFAULT_ADMIN_PASSWORD = "admin";
 
 export default {
   async fetch(request, env) {
@@ -790,16 +789,17 @@ async function passwordMatches(password, env) {
     return constantTimeEqual(await sha256Hex(password), storedHash);
   }
 
-  if (constantTimeEqual(password, DEFAULT_ADMIN_PASSWORD)) {
+  const initialPassword = normalizePassword(env.ADMIN_PASSWORD || "");
+  if (initialPassword.length >= 8 && constantTimeEqual(password, initialPassword)) {
     await env.CONFIGS_KV.put(
       ADMIN_PASSWORD_HASH_KEY,
-      await sha256Hex(DEFAULT_ADMIN_PASSWORD),
+      await sha256Hex(initialPassword),
     );
     await env.CONFIGS_KV.put(
       ADMIN_PASSWORD_META_KEY,
       JSON.stringify({
         updatedAt: new Date().toISOString(),
-        source: "auto-init",
+        source: "bootstrap-secret",
       }),
     );
 
@@ -3687,7 +3687,7 @@ vless://...</p>
       "پاسخ سرور نامعتبر است.": "Invalid server response.",
       "درخواست ناموفق بود.": "Request failed.",
       "رمز عبور اختصاصی برای پنل ثبت شده است.": "A custom panel password is set.",
-      "در حال حاضر رمز اولیه admin استفاده می‌شود.": "The default password admin is currently in use.",
+      "رمز اولیه از Secret با نام ADMIN_PASSWORD تنظیم می‌شود.": "The initial password is configured with the ADMIN_PASSWORD secret.",
       "هنوز کاربری ایجاد نشده است.": "No users have been created yet.",
       "فعال": "Enabled",
       "غیرفعال": "Disabled",
@@ -3768,7 +3768,7 @@ vless://...</p>
       if (users) {
         renderUsers();
         renderCopySources();
-        $("passwordMode").textContent = t(adminPasswordChanged ? "رمز عبور اختصاصی برای پنل ثبت شده است." : "در حال حاضر رمز اولیه admin استفاده می‌شود.");
+        $("passwordMode").textContent = t(adminPasswordChanged ? "رمز عبور اختصاصی برای پنل ثبت شده است." : "رمز اولیه از Secret با نام ADMIN_PASSWORD تنظیم می‌شود.");
       }
       if (telegramWebApp) {
         try {
@@ -3894,7 +3894,7 @@ vless://...</p>
       renderBulkUsers();
       renderTelegram(data.telegram || {});
       adminPasswordChanged = data.adminPasswordChanged;
-      $("passwordMode").textContent = adminPasswordChanged ? t("رمز عبور اختصاصی برای پنل ثبت شده است.") : t("در حال حاضر رمز اولیه admin استفاده می‌شود.");
+      $("passwordMode").textContent = adminPasswordChanged ? t("رمز عبور اختصاصی برای پنل ثبت شده است.") : t("رمز اولیه از Secret با نام ADMIN_PASSWORD تنظیم می‌شود.");
       if (!currentUserId && users.length) currentUserId = users[0].id;
       if (currentUserId) await loadUserConfigs(currentUserId);
     }
