@@ -305,7 +305,7 @@ LICENSE                     MIT license
 Run `npm test` before submitting changes. Keep both READMEs and language strings in sync. Report reproducible bugs through [Issues](https://github.com/erfan-tahvilian/config-pilot/issues), using sanitized sample data. Real tokens, account settings, subscription links and exported KV data do not belong in issues or commits. Dependency versions are locked for reproducible installs; review and test upgrades before changing the lockfile.
 
 <a id="support"></a>
-## 💜 Support and sponsorship
+## 💜 Support the project
 
 If Config Pilot is useful to you, consider supporting its continued development and maintenance.
 
